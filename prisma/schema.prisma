@@ -1,0 +1,840 @@
+// FieldServe schema — the single source of truth (Prisma Migrate).
+// Conventions:
+// - ids are cuid strings
+// - every business table: companyId, createdAt, createdById, updatedAt, updatedById, deletedAt
+// - timestamps are timestamptz (UTC); money is numeric(18,2)
+// - row-level security policies live in migrations/*_rls/migration.sql
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // app role (RLS applies)
+  directUrl = env("DIRECT_DATABASE_URL") // owner role (migrations + seed)
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  DISPATCHER
+  TECHNICIAN
+  CUSTOMER
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum AssetStatus {
+  ACTIVE
+  IN_REPAIR
+  RETIRED
+}
+
+enum ServiceItemType {
+  SERVICE
+  PART
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ServiceRequestStatus {
+  NEW
+  ESTIMATED
+  CONVERTED
+  CANCELLED
+}
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+}
+
+enum WorkOrderStatus {
+  NEW
+  SCHEDULED
+  DISPATCHED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  EN_ROUTE
+  ON_SITE
+  COMPLETED
+  CANCELLED
+}
+
+enum AttachmentKind {
+  PHOTO
+  SIGNATURE
+  DOCUMENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  ONLINE
+}
+
+enum MaintenanceFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+// ============================================================
+// Tenancy & auth
+// ============================================================
+
+model Company {
+  id                         String    @id @default(cuid())
+  name                       String
+  email                      String?
+  phone                      String?
+  address                    String?
+  timeZone                   String    @default("UTC") // IANA, e.g. Asia/Karachi
+  currency                   String    @default("USD")
+  taxPercent                 Decimal   @default(0) @db.Decimal(5, 2)
+  logoUrl                    String?
+  requireSignatureOnComplete Boolean   @default(false)
+  isActive                   Boolean   @default(true)
+  createdAt                  DateTime  @default(now()) @db.Timestamptz(3)
+  createdById                String?
+  updatedAt                  DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById                String?
+  deletedAt                  DateTime? @db.Timestamptz(3)
+
+  users                   User[]
+  technicianProfiles      TechnicianProfile[]
+  customers               Customer[]
+  serviceAddresses        ServiceAddress[]
+  assets                  Asset[]
+  serviceItems            ServiceItem[]
+  serviceRequests         ServiceRequest[]
+  estimates               Estimate[]
+  estimateLines           EstimateLine[]
+  workOrders              WorkOrder[]
+  workOrderLines          WorkOrderLine[]
+  workOrderNotes          WorkOrderNote[]
+  checklistTemplates      ChecklistTemplate[]
+  checklistTemplateItems  ChecklistTemplateItem[]
+  workOrderChecklistItems WorkOrderChecklistItem[]
+  appointments            Appointment[]
+  timeSheets              TimeSheet[]
+  attachments             Attachment[]
+  invoices                Invoice[]
+  invoiceLines            InvoiceLine[]
+  payments                Payment[]
+  maintenancePlans        MaintenancePlan[]
+  technicianLocations     TechnicianLocation[]
+  notifications           Notification[]
+  numberSequences         NumberSequence[]
+  workOrderStatusChanges  WorkOrderStatusChange[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  companyId    String? // null only for SUPER_ADMIN
+  company      Company?  @relation(fields: [companyId], references: [id])
+  fullName     String
+  email        String
+  phone        String?
+  passwordHash String
+  role         Role
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  createdById  String?
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById  String?
+  deletedAt    DateTime? @db.Timestamptz(3)
+
+  technicianProfile   TechnicianProfile?
+  refreshTokens       RefreshToken[]
+  appointments        Appointment[]
+  timeSheets          TimeSheet[]
+  technicianLocations TechnicianLocation[]
+  notifications       Notification[]
+  checklistItemsDone  WorkOrderChecklistItem[]
+
+  // Unique per company; SUPER_ADMIN emails are unique via a partial index in the RLS migration.
+  workOrderStatusChanges WorkOrderStatusChange[]
+
+  @@unique([companyId, email])
+  @@index([email])
+}
+
+model RefreshToken {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  tokenHash      String    @unique // SHA-256; the raw token is never stored
+  expiresAt      DateTime  @db.Timestamptz(3)
+  revokedAt      DateTime? @db.Timestamptz(3)
+  replacedByHash String?
+  createdByIp    String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+}
+
+model TechnicianProfile {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id])
+  skills      String[]
+  hourlyRate  Decimal   @default(0) @db.Decimal(18, 2)
+  workStart   String    @default("09:00") // HH:mm, company local time
+  workEnd     String    @default("18:00")
+  workingDays String[]  @default(["MON", "TUE", "WED", "THU", "FRI"])
+  color       String    @default("#3b82f6")
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  @@index([companyId])
+}
+
+// ============================================================
+// Customers, assets, catalog
+// ============================================================
+
+model Customer {
+  id          String       @id @default(cuid())
+  companyId   String
+  company     Company      @relation(fields: [companyId], references: [id])
+  type        CustomerType @default(INDIVIDUAL)
+  name        String
+  email       String?
+  phone       String?
+  notes       String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?    @db.Timestamptz(3)
+
+  addresses        ServiceAddress[]
+  assets           Asset[]
+  serviceRequests  ServiceRequest[]
+  estimates        Estimate[]
+  workOrders       WorkOrder[]
+  invoices         Invoice[]
+  maintenancePlans MaintenancePlan[]
+
+  @@index([companyId, name])
+}
+
+model ServiceAddress {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  label       String?
+  addressLine String
+  city        String?
+  state       String?
+  postalCode  String?
+  country     String?
+  latitude    Decimal?  @db.Decimal(9, 6)
+  longitude   Decimal?  @db.Decimal(9, 6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  assets           Asset[]
+  serviceRequests  ServiceRequest[]
+  estimates        Estimate[]
+  workOrders       WorkOrder[]
+  maintenancePlans MaintenancePlan[]
+
+  @@index([companyId, customerId])
+}
+
+model Asset {
+  id              String          @id @default(cuid())
+  companyId       String
+  company         Company         @relation(fields: [companyId], references: [id])
+  customerId      String
+  customer        Customer        @relation(fields: [customerId], references: [id])
+  addressId       String?
+  address         ServiceAddress? @relation(fields: [addressId], references: [id])
+  name            String
+  category        String?
+  brand           String?
+  model           String?
+  serialNo        String?
+  installDate     DateTime?       @db.Date
+  warrantyEndDate DateTime?       @db.Date
+  status          AssetStatus     @default(ACTIVE)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  createdById     String?
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  updatedById     String?
+  deletedAt       DateTime?       @db.Timestamptz(3)
+
+  serviceRequests  ServiceRequest[]
+  workOrders       WorkOrder[]
+  maintenancePlans MaintenancePlan[]
+
+  @@index([companyId, customerId])
+  @@index([companyId, status])
+}
+
+model ServiceItem {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id])
+  name        String
+  type        ServiceItemType @default(SERVICE)
+  sku         String?
+  unitPrice   Decimal         @default(0) @db.Decimal(18, 2)
+  taxPercent  Decimal         @default(0) @db.Decimal(5, 2)
+  stockQty    Decimal?        @db.Decimal(18, 2)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?       @db.Timestamptz(3)
+
+  estimateLines  EstimateLine[]
+  workOrderLines WorkOrderLine[]
+  invoiceLines   InvoiceLine[]
+
+  @@index([companyId, name])
+}
+
+// ============================================================
+// Requests, estimates, work orders
+// ============================================================
+
+model ServiceRequest {
+  id          String               @id @default(cuid())
+  companyId   String
+  company     Company              @relation(fields: [companyId], references: [id])
+  number      String
+  customerId  String
+  customer    Customer             @relation(fields: [customerId], references: [id])
+  addressId   String?
+  address     ServiceAddress?      @relation(fields: [addressId], references: [id])
+  assetId     String?
+  asset       Asset?               @relation(fields: [assetId], references: [id])
+  title       String
+  description String?
+  priority    Priority             @default(MEDIUM)
+  source      String               @default("PHONE")
+  category    String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  preferredAt  DateTime?            @db.Timestamptz(3)
+  status      ServiceRequestStatus @default(NEW)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?            @db.Timestamptz(3)
+
+  estimates  Estimate[]
+  workOrders WorkOrder[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+}
+
+model Estimate {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id])
+  number      String
+  requestId   String?
+  request     ServiceRequest? @relation(fields: [requestId], references: [id])
+  customerId  String
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  addressId   String?
+  address     ServiceAddress? @relation(fields: [addressId], references: [id])
+  status      EstimateStatus  @default(DRAFT)
+  subTotal    Decimal         @default(0) @db.Decimal(18, 2)
+  tax         Decimal         @default(0) @db.Decimal(18, 2)
+  discount    Decimal         @default(0) @db.Decimal(18, 2)
+  total       Decimal         @default(0) @db.Decimal(18, 2)
+  validUntil  DateTime?       @db.Date
+  notes       String?
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?       @db.Timestamptz(3)
+
+  lines      EstimateLine[]
+  workOrders WorkOrder[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+}
+
+model EstimateLine {
+  id            String       @id @default(cuid())
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id])
+  estimateId    String
+  estimate      Estimate     @relation(fields: [estimateId], references: [id])
+  serviceItemId String?
+  serviceItem   ServiceItem? @relation(fields: [serviceItemId], references: [id])
+  description   String
+  qty           Decimal      @default(1) @db.Decimal(18, 2)
+  unitPrice     Decimal      @default(0) @db.Decimal(18, 2)
+  taxPercent    Decimal      @default(0) @db.Decimal(5, 2)
+  lineTotal     Decimal      @default(0) @db.Decimal(18, 2)
+  sortOrder     Int          @default(0)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  createdById   String?
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+  updatedById   String?
+  deletedAt     DateTime?    @db.Timestamptz(3)
+
+  @@index([estimateId])
+}
+
+model WorkOrder {
+  id                String           @id @default(cuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id])
+  number            String
+  customerId        String
+  customer          Customer         @relation(fields: [customerId], references: [id])
+  addressId         String?
+  address           ServiceAddress?  @relation(fields: [addressId], references: [id])
+  assetId           String?
+  asset             Asset?           @relation(fields: [assetId], references: [id])
+  requestId         String?
+  request           ServiceRequest?  @relation(fields: [requestId], references: [id])
+  estimateId        String?
+  estimate          Estimate?        @relation(fields: [estimateId], references: [id])
+  maintenancePlanId String?
+  maintenancePlan   MaintenancePlan? @relation(fields: [maintenancePlanId], references: [id])
+  title             String
+  description       String?
+  priority          Priority         @default(MEDIUM)
+  status            WorkOrderStatus  @default(NEW)
+  dueDate           DateTime?        @db.Timestamptz(3)
+  completedAt       DateTime?        @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+  createdById       String?
+  updatedAt         DateTime         @updatedAt @db.Timestamptz(3)
+  updatedById       String?
+  deletedAt         DateTime?        @db.Timestamptz(3)
+
+  lines          WorkOrderLine[]
+  notes          WorkOrderNote[]
+  checklistItems WorkOrderChecklistItem[]
+  appointments   Appointment[]
+  invoices       Invoice[]
+
+  statusChanges WorkOrderStatusChange[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@index([maintenancePlanId])
+}
+
+model WorkOrderLine {
+  id            String       @id @default(cuid())
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id])
+  workOrderId   String
+  workOrder     WorkOrder    @relation(fields: [workOrderId], references: [id])
+  serviceItemId String?
+  serviceItem   ServiceItem? @relation(fields: [serviceItemId], references: [id])
+  description   String
+  qty           Decimal      @default(1) @db.Decimal(18, 2)
+  unitPrice     Decimal      @default(0) @db.Decimal(18, 2)
+  taxPercent    Decimal      @default(0) @db.Decimal(5, 2)
+  lineTotal     Decimal      @default(0) @db.Decimal(18, 2)
+  sortOrder     Int          @default(0)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  createdById   String?
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+  updatedById   String?
+  deletedAt     DateTime?    @db.Timestamptz(3)
+
+  @@index([workOrderId])
+}
+
+model WorkOrderNote {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  text        String
+  isInternal  Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  @@index([workOrderId])
+}
+
+model ChecklistTemplate {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  name        String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  items ChecklistTemplateItem[]
+
+  @@index([companyId])
+}
+
+model ChecklistTemplateItem {
+  id          String            @id @default(cuid())
+  companyId   String
+  company     Company           @relation(fields: [companyId], references: [id])
+  templateId  String
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id])
+  text        String
+  sortOrder   Int               @default(0)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?         @db.Timestamptz(3)
+
+  @@index([templateId])
+}
+
+model WorkOrderChecklistItem {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  text        String
+  sortOrder   Int       @default(0)
+  isDone      Boolean   @default(false)
+  doneById    String?
+  doneBy      User?     @relation(fields: [doneById], references: [id])
+  doneAt      DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  @@index([workOrderId])
+}
+
+// ============================================================
+// Scheduling, field work, tracking
+// ============================================================
+
+model Appointment {
+  id             String            @id @default(cuid())
+  companyId      String
+  company        Company           @relation(fields: [companyId], references: [id])
+  workOrderId    String
+  workOrder      WorkOrder         @relation(fields: [workOrderId], references: [id])
+  technicianId   String
+  technician     User              @relation(fields: [technicianId], references: [id])
+  scheduledStart DateTime          @db.Timestamptz(3)
+  scheduledEnd   DateTime          @db.Timestamptz(3)
+  status         AppointmentStatus @default(SCHEDULED)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  createdById    String?
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(3)
+  updatedById    String?
+  deletedAt      DateTime?         @db.Timestamptz(3)
+
+  timeSheets TimeSheet[]
+
+  @@index([technicianId, scheduledStart])
+  @@index([companyId, status])
+  @@index([workOrderId])
+}
+
+model TimeSheet {
+  id              String      @id @default(cuid())
+  companyId       String
+  company         Company     @relation(fields: [companyId], references: [id])
+  appointmentId   String
+  appointment     Appointment @relation(fields: [appointmentId], references: [id])
+  technicianId    String
+  technician      User        @relation(fields: [technicianId], references: [id])
+  checkInAt       DateTime    @db.Timestamptz(3)
+  checkInLat      Decimal?    @db.Decimal(9, 6)
+  checkInLng      Decimal?    @db.Decimal(9, 6)
+  checkOutAt      DateTime?   @db.Timestamptz(3)
+  checkOutLat     Decimal?    @db.Decimal(9, 6)
+  checkOutLng     Decimal?    @db.Decimal(9, 6)
+  durationMinutes Int?
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  createdById     String?
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+  updatedById     String?
+  deletedAt       DateTime?   @db.Timestamptz(3)
+
+  @@index([appointmentId])
+  @@index([technicianId, checkInAt])
+}
+
+model Attachment {
+  id          String         @id @default(cuid())
+  companyId   String
+  company     Company        @relation(fields: [companyId], references: [id])
+  entityType  String // WORK_ORDER | ASSET | CUSTOMER | ESTIMATE | INVOICE
+  entityId    String
+  fileName    String
+  storageKey  String
+  contentType String?
+  sizeBytes   Int?
+  kind        AttachmentKind @default(DOCUMENT)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?      @db.Timestamptz(3)
+
+  @@index([companyId, entityType, entityId])
+}
+
+model TechnicianLocation {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id])
+  technicianId String
+  technician   User      @relation(fields: [technicianId], references: [id])
+  latitude     Decimal   @db.Decimal(9, 6)
+  longitude    Decimal   @db.Decimal(9, 6)
+  speed        Decimal?  @db.Decimal(9, 2)
+  heading      Decimal?  @db.Decimal(9, 2)
+  accuracy     Decimal?  @db.Decimal(9, 2)
+  recordedAt   DateTime  @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  createdById  String?
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById  String?
+  deletedAt    DateTime? @db.Timestamptz(3)
+
+  @@index([technicianId, recordedAt(sort: Desc)])
+  @@index([recordedAt])
+}
+
+// ============================================================
+// Billing & maintenance
+// ============================================================
+
+model Invoice {
+  id          String        @id @default(cuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id])
+  number      String
+  workOrderId String?
+  workOrder   WorkOrder?    @relation(fields: [workOrderId], references: [id])
+  customerId  String
+  customer    Customer      @relation(fields: [customerId], references: [id])
+  status      InvoiceStatus @default(DRAFT)
+  subTotal    Decimal       @default(0) @db.Decimal(18, 2)
+  tax         Decimal       @default(0) @db.Decimal(18, 2)
+  discount    Decimal       @default(0) @db.Decimal(18, 2)
+  total       Decimal       @default(0) @db.Decimal(18, 2)
+  amountPaid  Decimal       @default(0) @db.Decimal(18, 2)
+  issueDate   DateTime      @default(now()) @db.Date
+  dueDate     DateTime?     @db.Date
+  notes       String?
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?     @db.Timestamptz(3)
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+}
+
+model InvoiceLine {
+  id            String       @id @default(cuid())
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id])
+  invoiceId     String
+  invoice       Invoice      @relation(fields: [invoiceId], references: [id])
+  serviceItemId String?
+  serviceItem   ServiceItem? @relation(fields: [serviceItemId], references: [id])
+  description   String
+  qty           Decimal      @default(1) @db.Decimal(18, 2)
+  unitPrice     Decimal      @default(0) @db.Decimal(18, 2)
+  taxPercent    Decimal      @default(0) @db.Decimal(5, 2)
+  lineTotal     Decimal      @default(0) @db.Decimal(18, 2)
+  sortOrder     Int          @default(0)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  createdById   String?
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+  updatedById   String?
+  deletedAt     DateTime?    @db.Timestamptz(3)
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id])
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  amount      Decimal       @db.Decimal(18, 2)
+  method      PaymentMethod
+  reference   String?
+  paidAt      DateTime      @default(now()) @db.Timestamptz(3)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?     @db.Timestamptz(3)
+
+  @@index([invoiceId])
+}
+
+model MaintenancePlan {
+  id            String               @id @default(cuid())
+  companyId     String
+  company       Company              @relation(fields: [companyId], references: [id])
+  customerId    String
+  customer      Customer             @relation(fields: [customerId], references: [id])
+  assetId       String?
+  asset         Asset?               @relation(fields: [assetId], references: [id])
+  addressId     String?
+  address       ServiceAddress?      @relation(fields: [addressId], references: [id])
+  title         String
+  frequency     MaintenanceFrequency
+  intervalCount Int                  @default(1)
+  leadDays      Int                  @default(7)
+  startDate     DateTime             @db.Date
+  nextDueDate   DateTime             @db.Date
+  endDate       DateTime?            @db.Date
+  templateLines Json?
+  isActive      Boolean              @default(true)
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  createdById   String?
+  updatedAt     DateTime             @updatedAt @db.Timestamptz(3)
+  updatedById   String?
+  deletedAt     DateTime?            @db.Timestamptz(3)
+
+  workOrders WorkOrder[]
+
+  @@index([isActive, nextDueDate])
+  @@index([companyId])
+}
+
+// ============================================================
+// System
+// ============================================================
+
+model Notification {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  title       String
+  body        String?
+  link        String?
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  @@index([userId, isRead])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  companyId  String?
+  entityType String
+  entityId   String
+  action     String // CREATE | UPDATE | DELETE
+  before     Json?
+  after      Json?
+  userId     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([companyId, entityType, entityId])
+}
+
+model NumberSequence {
+  companyId  String
+  company    Company @relation(fields: [companyId], references: [id])
+  entityType String // SR | EST | WO | INV
+  last       Int     @default(0)
+
+  @@id([companyId, entityType])
+}
+
+/// One row per work order status move (the status timeline). Written only by the work order service.
+model WorkOrderStatusChange {
+  id          String           @id @default(cuid())
+  companyId   String
+  company     Company          @relation(fields: [companyId], references: [id])
+  workOrderId String
+  workOrder   WorkOrder        @relation(fields: [workOrderId], references: [id])
+  fromStatus  WorkOrderStatus?
+  toStatus    WorkOrderStatus
+  reason      String?
+  changedById String?
+  changedBy   User?            @relation(fields: [changedById], references: [id])
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([workOrderId, createdAt])
+}
