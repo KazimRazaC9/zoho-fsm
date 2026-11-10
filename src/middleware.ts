@@ -6,5 +6,7 @@ export default NextAuth(authConfig).auth;
 
 export const config = {
   // API routes authenticate themselves (session cookie or bearer token).
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|webmanifest)$).*)"],
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|sw.js|offline.html|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|webmanifest)$).*)",
+  ],
 };

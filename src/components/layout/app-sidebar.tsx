@@ -63,7 +63,7 @@ export function AppSidebar({
         {!collapsed && <span className="font-semibold">FieldServe</span>}
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-2" aria-label="Main">
+      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Main">
         {Object.entries(groups).map(([group, items]) => (
           <div key={group} className="space-y-1">
             {!collapsed && (

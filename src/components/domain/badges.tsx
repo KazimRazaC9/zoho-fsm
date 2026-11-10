@@ -59,3 +59,37 @@ export function PriorityText({ priority }: { priority: Priority }) {
     </span>
   );
 }
+
+export function EstimateStatusBadge({ status }: { status: import("@prisma/client").EstimateStatus }) {
+  const t = { DRAFT: tone.gray, SENT: tone.blue, APPROVED: tone.green, REJECTED: tone.red }[status];
+  const label = { DRAFT: "Draft", SENT: "Sent", APPROVED: "Approved", REJECTED: "Rejected" }[status];
+  return (
+    <Badge variant="outline" className={t}>
+      {label}
+    </Badge>
+  );
+}
+
+export function InvoiceStatusBadge({ status }: { status: import("@prisma/client").InvoiceStatus }) {
+  const t = {
+    DRAFT: tone.gray,
+    SENT: tone.blue,
+    PARTIALLY_PAID: tone.amber,
+    PAID: tone.green,
+    OVERDUE: tone.red,
+    VOID: tone.gray,
+  }[status];
+  const label = {
+    DRAFT: "Draft",
+    SENT: "Issued",
+    PARTIALLY_PAID: "Partially paid",
+    PAID: "Paid",
+    OVERDUE: "Overdue",
+    VOID: "Void",
+  }[status];
+  return (
+    <Badge variant="outline" className={t}>
+      {label}
+    </Badge>
+  );
+}

@@ -176,3 +176,61 @@ tests/                 unit/ + integration/ (tenant isolation, refresh rotation)
 
 See `.env.example`. `DATABASE_URL` = app role (RLS applies). `DIRECT_DATABASE_URL` = owner role, used only by
 Prisma Migrate and the seed.
+
+## Phase 4 — Scheduling & dispatch board
+
+Open **Dispatch board** (`/dispatch`) as Admin or Dispatcher. Technicians are rows, the day is the time axis (shaded = outside working hours, red line = now). Unscheduled New jobs wait in the left list.
+
+- **Schedule:** drag a job onto a technician's row, click an empty slot, or press *Schedule* on a job card. Pick technician, start and duration.
+- **Double-booking is refused** with a clear message ("Imran is already booked 09:00–10:00 on WO-000012"). Back-to-back visits are fine.
+- **Click a visit** to open it, reschedule, unschedule (Scheduled → New) or **Dispatch** it.
+- The visit follows the work order: dispatched → en route, in progress → on site, completed → completed, cancelled → slot freed. On hold keeps the slot.
+- A work order shows its technician and time in its header.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dispatch/board?date=YYYY-MM-DD` | Technicians with visits for the day + unscheduled jobs |
+| PUT | `/api/v1/work-orders/{id}/schedule` | `{technicianId, start, durationMin}` assign or move (409 on clash) |
+| DELETE | `/api/v1/work-orders/{id}/schedule` | Take it off the board |
+
+## Phase 5 — Technician field app (PWA) and live map
+
+Technicians sign in (e.g. `imran@drivesense.local`) and land on **My jobs** — a phone-first app, installable to the home screen (manifest + service worker; offline shows a "no signal" page, job data is never cached).
+
+- **My jobs:** today, carried-over, upcoming and recently finished visits.
+- **Job screen:** customer + site, *Navigate* (maps) and *Call* buttons, description, checklist, services & parts, photos (camera), customer **signature pad**, notes.
+- **Action bar:** *On my way* → *Start work* (check-in, GPS if allowed, timesheet starts) → *Complete job* (checklist and, if the company requires it, signature must be done). *Put on hold* needs a reason and stops the clock; *Resume* starts a new check-in.
+- **Parts:** picked from the catalog; price and tax come from the catalog, technicians see no prices.
+- A technician can only open jobs assigned to them; everything else is a 404.
+- **Location sharing:** header pin toggles sending the phone's position once a minute while the app is open.
+- **Live map** (`/live-map`, Admin/Dispatcher): every technician's latest position, last-seen time (amber after 15 min), current job; refreshes every 30 s.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/field/jobs` | My visits |
+| GET | `/api/v1/field/jobs/{id}` | One of my jobs |
+| POST | `/api/v1/field/jobs/{id}/transition` | `{action: on-my-way\|start\|hold\|resume\|complete, reason?, location?}` |
+| POST | `/api/v1/field/jobs/{id}/attachments` | Photo, or `kind=SIGNATURE` |
+| POST | `/api/v1/field/location` | One GPS reading |
+| GET | `/api/v1/field/live` | Latest position per technician (Admin/Dispatcher) |
+
+## Phase 6 — Estimates, invoices and payments
+
+**Estimates** (`/estimates`, Admin + Dispatcher): *Create estimate* from a service request (request → Estimated), add catalog lines, **Mark as sent** → **Customer approved** / Rejected → **Create work order** (customer, site and every line are copied, request → Converted). Sent/approved estimates are locked; *Revise* reopens a Sent or Rejected one. Print / Save as PDF page included.
+
+**Invoices** (`/invoices`; Admin writes, Dispatcher reads): a completed work order → **Create invoice** (one live invoice per work order, lines copied, due in 14 days). Draft: edit lines, discount, due date, notes. **Issue** locks amounts. **Record payment** (cash, card, bank transfer, online; partial payments fine; paying more than the balance is refused; the invoice row is locked so two simultaneous payments cannot overpay). Status follows the payments: Issued → Partially paid → Paid; an unpaid issued invoice past its due date shows **Overdue** (derived, no job needed). Void works while nothing is paid; an Admin can remove a wrongly entered payment. Top cards: outstanding, overdue, collected in the last 30 days.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET/POST | `/api/v1/estimates` | List / create |
+| GET/PUT/DELETE | `/api/v1/estimates/{id}` | Read / edit / delete (drafts) |
+| POST | `/api/v1/estimates/{id}/status` | `{status: SENT\|APPROVED\|REJECTED\|DRAFT}` |
+| POST | `/api/v1/estimates/{id}/convert` | Approved estimate → work order |
+| POST/PUT/DELETE | `/api/v1/estimates/{id}/lines[/{lineId}]` | Lines (drafts) |
+| GET | `/api/v1/invoices`, `/invoices/summary`, `/invoices/{id}` | List, totals, detail |
+| POST | `/api/v1/work-orders/{id}/invoice` | Draft invoice from a completed work order |
+| PUT | `/api/v1/invoices/{id}` | Due date, notes, discount (draft) |
+| POST | `/api/v1/invoices/{id}/issue`, `/void` | Lock amounts / cancel |
+| POST/PUT/DELETE | `/api/v1/invoices/{id}/lines[/{lineId}]` | Lines (drafts) |
+| POST | `/api/v1/invoices/{id}/payments` | `{amount, method, reference?, paidAt?}` |
+| DELETE | `/api/v1/invoices/{id}/payments/{paymentId}` | Remove a wrong payment |

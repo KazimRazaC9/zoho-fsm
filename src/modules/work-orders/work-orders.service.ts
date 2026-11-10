@@ -23,6 +23,7 @@ import { deleteStoredFile, readStoredFile, safeFileName, saveFile } from "@/lib/
 import { formatIn, fromCompanyTime } from "@/lib/tz";
 import { nullIfEmpty } from "@/lib/validation";
 import { checklistsService } from "@/modules/checklists";
+import { syncAppointments } from "@/modules/scheduling";
 
 const companyOf = (actor: CurrentUser) => {
   if (!actor.companyId) throw new ForbiddenError("This action needs a company account.");
@@ -232,7 +233,7 @@ export const workOrdersService = {
     db: AppDb,
     actor: CurrentUser,
     input: CreateWorkOrderInput,
-    opts: { requestId?: string; lines?: LineInput[] } = {},
+    opts: { requestId?: string; estimateId?: string; lines?: LineInput[] } = {},
   ): Promise<WorkOrderDetail> {
     const companyId = companyOf(actor);
     const c = await company(db, actor);
@@ -246,6 +247,7 @@ export const workOrdersService = {
           companyId,
           number,
           requestId: opts.requestId ?? null,
+          estimateId: opts.estimateId ?? null,
           status: "NEW",
           ...detailsData(input, c.timeZone),
         },
@@ -256,7 +258,11 @@ export const workOrdersService = {
         workOrderId: wo.id,
         fromStatus: null,
         toStatus: "NEW",
-        reason: opts.requestId ? "Created from service request" : null,
+        reason: opts.estimateId
+          ? "Created from approved estimate"
+          : opts.requestId
+            ? "Created from service request"
+            : null,
         changedById: actor.id,
       });
       if (items.length) {
@@ -317,6 +323,7 @@ export const workOrdersService = {
         reason: nullIfEmpty(input.reason),
         changedById: actor.id,
       });
+      await syncAppointments(db, id, input.status);
     });
     return this.get(db, actor, id);
   },

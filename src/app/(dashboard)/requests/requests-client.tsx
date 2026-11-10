@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRightCircle, Ban, Loader2, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import { ArrowRightCircle, Ban, FileText, Loader2, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -282,6 +283,11 @@ export function RequestRowActions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link href={`/estimates?request=${request.id}`}>
+                <FileText /> Create estimate
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setDialog("edit")}>
               <Pencil /> Edit
             </DropdownMenuItem>

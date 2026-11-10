@@ -12,7 +12,7 @@ export function AppShell({ user, children }: { user: MenuUser; children: React.R
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-svh">
+    <div className="flex h-svh overflow-hidden">
       <AppSidebar role={user.role} mobileOpen={mobileOpen} onNavigate={() => setMobileOpen(false)} />
       {mobileOpen && (
         <button
@@ -22,8 +22,8 @@ export function AppShell({ user, children }: { user: MenuUser; children: React.R
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="bg-background/95 sticky top-0 z-20 flex h-14 items-center gap-2 border-b px-4 backdrop-blur">
+      <div className="flex h-svh min-w-0 flex-1 flex-col">
+        <header className="bg-background z-20 flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <Button
             variant="ghost"
             size="icon"
@@ -39,7 +39,7 @@ export function AppShell({ user, children }: { user: MenuUser; children: React.R
             <UserMenu user={user} />
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ async function main() {
     // The DriveSense tenant can still be added to an existing database.
     await seedDriveSense(prisma, passwordHash);
     await backfillTimelines();
+    await seedDemoLocations();
     return;
   }
 
@@ -336,12 +337,39 @@ async function main() {
 
   await seedDriveSense(prisma, passwordHash);
   await backfillTimelines();
+  await seedDemoLocations();
 
   console.log("Seed complete:");
   console.log(
     "  superadmin@fieldserve.local, admin@demo.local, dispatcher@demo.local, tech1..3@demo.local, admin@acme.local",
   );
   console.log("  password = SEED_PASSWORD from .env");
+}
+
+/** A few GPS positions so the live map is not empty in a fresh demo (only when the company has none yet). */
+async function seedDemoLocations() {
+  const company = await prisma.company.findFirst({ where: { email: "ops@drivesense.local" }, select: { id: true } });
+  if (!company) return;
+  if ((await prisma.technicianLocation.count({ where: { companyId: company.id } })) > 0) return;
+  const spots: Record<string, { lat: number; lng: number; minutesAgo: number }> = {
+    "imran@drivesense.local": { lat: 24.8987, lng: 66.981, minutesAgo: 3 },
+    "ahsan@drivesense.local": { lat: 24.8607, lng: 67.0011, minutesAgo: 8 },
+    "bilal.khi@drivesense.local": { lat: 24.8138, lng: 67.03, minutesAgo: 45 },
+  };
+  for (const [email, s] of Object.entries(spots)) {
+    const u = await prisma.user.findFirst({ where: { companyId: company.id, email }, select: { id: true } });
+    if (!u) continue;
+    await prisma.technicianLocation.create({
+      data: {
+        companyId: company.id,
+        technicianId: u.id,
+        latitude: s.lat,
+        longitude: s.lng,
+        accuracy: 25,
+        recordedAt: new Date(Date.now() - s.minutesAgo * 60_000),
+      },
+    });
+  }
 }
 
 /** Every work order starts its status timeline at its current status. */

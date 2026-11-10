@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarClock, ChevronLeft, ExternalLink, Inbox, MapPin, Phone, Wrench } from "lucide-react";
 import { AttachmentsSection, ChecklistSection, LinesSection, NotesSection, StatusActions } from "./work-order-client";
+import { InvoiceLink } from "./invoice-link";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { dbFor, requireRole, requireUser } from "@/lib/auth";
@@ -14,6 +15,8 @@ import { catalogService } from "@/modules/catalog";
 import { checklistsService } from "@/modules/checklists";
 import { companiesService } from "@/modules/companies";
 import { customersService, mapsUrl } from "@/modules/customers";
+import { invoicesService } from "@/modules/invoices";
+import { schedulingService } from "@/modules/scheduling";
 import { workOrdersService } from "@/modules/work-orders";
 
 export const metadata: Metadata = { title: "Work order" };
@@ -28,11 +31,13 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  const [company, customers, templates, items] = await Promise.all([
+  const [company, customers, templates, items, visit, invoice] = await Promise.all([
     companiesService.getSettings(db, user),
     customersService.options(db),
     checklistsService.options(db),
     catalogService.options(db),
+    schedulingService.forWorkOrder(db, user, id),
+    invoicesService.forWorkOrder(db, id),
   ]);
   const tz = company.timeZone;
   const when = (iso: string, p = "dd MMM yyyy, HH:mm") => formatIn(new Date(iso), tz, p);
@@ -55,9 +60,26 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
             <div className="flex flex-wrap items-center gap-2">
               <WorkOrderStatusBadge status={wo.status} />
               <PriorityText priority={wo.priority} />
+              {visit && (
+                <Link
+                  href={`/dispatch?date=${visit.startLocal.slice(0, 10)}`}
+                  className="text-muted-foreground inline-flex items-center gap-1 text-sm hover:underline"
+                >
+                  <CalendarClock className="size-4" />
+                  {visit.technicianName} · {when(visit.start)} ({visit.durationMin} min)
+                </Link>
+              )}
             </div>
           </div>
-          <StatusActions wo={wo} role={user.role} customers={customers} />
+          <div className="flex flex-wrap items-center gap-2">
+            <InvoiceLink
+              workOrderId={wo.id}
+              completed={wo.status === "COMPLETED"}
+              isAdmin={user.role === "ADMIN"}
+              invoice={invoice}
+            />
+            <StatusActions wo={wo} role={user.role} customers={customers} />
+          </div>
         </div>
 
         <Card>
