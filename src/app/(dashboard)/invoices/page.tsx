@@ -6,7 +6,7 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { InvoiceStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { formatCurrency, formatDay } from "@/lib/format";
 import { companiesService } from "@/modules/companies";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUSES, invoiceListQuerySchema, invoicesService } from "@/modules/invoices";
@@ -19,6 +19,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/invoices");
   const db = dbFor(user);
   const q = invoiceListQuerySchema.parse(sp);
 

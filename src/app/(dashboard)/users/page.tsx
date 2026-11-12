@@ -7,10 +7,11 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/roles";
 import { companiesService } from "@/modules/companies";
 import { STAFF_ROLES, userListQuerySchema, usersService } from "@/modules/users";
+import { rolesService } from "@/modules/roles";
 
 export const metadata: Metadata = { title: "Users & technicians" };
 
@@ -20,10 +21,16 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN"]);
+  requirePagePermission(user, "/users");
   const db = dbFor(user);
 
   const q = userListQuerySchema.parse(sp);
-  const [result, company] = await Promise.all([usersService.list(db, q), companiesService.getSettings(db, user)]);
+  const [result, company, customRoles] = await Promise.all([
+    usersService.list(db, q),
+    companiesService.getSettings(db, user),
+    rolesService.list(db),
+  ]);
+  const availableRoles = customRoles.map(({ id, name, baseRole }) => ({ id, name, baseRole }));
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -32,7 +39,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
           <h1 className="text-2xl font-semibold tracking-tight">Users & technicians</h1>
           <p className="text-muted-foreground text-sm">Staff who can sign in to {company.name}.</p>
         </div>
-        <AddUserButton currency={company.currency} />
+        <AddUserButton currency={company.currency} customRoles={availableRoles} />
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -97,7 +104,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
                 </TableCell>
                 <TableCell className="hidden md:table-cell">{u.email}</TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "ADMIN" ? "default" : "secondary"}>{ROLE_LABEL[u.role]}</Badge>
+                  <Badge variant={u.role === "ADMIN" ? "default" : "secondary"}>
+                    {u.customRoleName ?? ROLE_LABEL[u.role]}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground hidden text-sm lg:table-cell">
                   {u.technicianProfile
@@ -111,7 +120,12 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
                   <Badge variant={u.isActive ? "outline" : "destructive"}>{u.isActive ? "Active" : "Inactive"}</Badge>
                 </TableCell>
                 <TableCell>
-                  <UserRowActions user={u} currency={company.currency} isSelf={u.id === user.id} />
+                  <UserRowActions
+                    user={u}
+                    currency={company.currency}
+                    customRoles={availableRoles}
+                    isSelf={u.id === user.id}
+                  />
                 </TableCell>
               </TableRow>
             ))}

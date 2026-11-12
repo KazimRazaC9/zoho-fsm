@@ -7,11 +7,13 @@ import {
   changeStatusSchema,
   checklistItemSchema,
   createWorkOrderSchema,
+  issueSchema,
   lineSchema,
   noteSchema,
   workOrderSchema,
   type ChangeStatusInput,
   type CreateWorkOrderInput,
+  type IssueInput,
   type LineInput,
   type NoteInput,
   type WorkOrderInput,
@@ -36,17 +38,21 @@ function done<T>(res: ActionResult<T>) {
 
 export async function createWorkOrderAction(input: CreateWorkOrderInput) {
   return done(
-    await runAction({ roles: OPS, input: createWorkOrderSchema }, input, async ({ db, user, input }) => {
-      const w = await workOrdersService.create(db, user, input);
-      return { id: w.id, number: w.number };
-    }),
+    await runAction(
+      { roles: OPS, permission: "workOrders:create", input: createWorkOrderSchema },
+      input,
+      async ({ db, user, input }) => {
+        const w = await workOrdersService.create(db, user, input);
+        return { id: w.id, number: w.number };
+      },
+    ),
   );
 }
 
 export async function updateWorkOrderAction(id: string, input: WorkOrderInput) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ data: workOrderSchema }) },
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ data: workOrderSchema }) },
       { id, data: input },
       async ({ db, user, input }) => {
         await workOrdersService.update(db, user, input.id, input.data);
@@ -59,7 +65,7 @@ export async function changeWorkOrderStatusAction(id: string, input: ChangeStatu
   // Reopening is checked inside the state machine (Admin only), so both ops roles may call this.
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ data: changeStatusSchema }) },
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ data: changeStatusSchema }) },
       { id, data: input },
       async ({ db, user, input }) => {
         const w = await workOrdersService.changeStatus(db, user, input.id, input.data);
@@ -71,7 +77,9 @@ export async function changeWorkOrderStatusAction(id: string, input: ChangeStatu
 
 export async function deleteWorkOrderAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: wo }, { id }, ({ db, input }) => workOrdersService.remove(db, input.id)),
+    await runAction({ roles: ADMIN, permission: "workOrders:delete", input: wo }, { id }, ({ db, input }) =>
+      workOrdersService.remove(db, input.id),
+    ),
   );
 }
 
@@ -79,7 +87,11 @@ export async function deleteWorkOrderAction(id: string) {
 export async function saveLineAction(id: string, lineId: string | null, input: LineInput) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ lineId: idParam.nullable(), data: lineSchema }) },
+      {
+        roles: OPS,
+        permission: lineId ? "workOrders:edit" : "workOrders:create",
+        input: wo.extend({ lineId: idParam.nullable(), data: lineSchema }),
+      },
       { id, lineId, data: input },
       ({ db, user, input }) =>
         input.lineId
@@ -91,8 +103,10 @@ export async function saveLineAction(id: string, lineId: string | null, input: L
 
 export async function deleteLineAction(id: string, lineId: string) {
   return done(
-    await runAction({ roles: OPS, input: wo.extend({ lineId: idParam }) }, { id, lineId }, ({ db, input }) =>
-      workOrdersService.removeLine(db, input.id, input.lineId),
+    await runAction(
+      { roles: OPS, permission: "workOrders:delete", input: wo.extend({ lineId: idParam }) },
+      { id, lineId },
+      ({ db, input }) => workOrdersService.removeLine(db, input.id, input.lineId),
     ),
   );
 }
@@ -100,7 +114,7 @@ export async function deleteLineAction(id: string, lineId: string) {
 export async function addNoteAction(id: string, input: NoteInput) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ data: noteSchema }) },
+      { roles: OPS, permission: "workOrders:create", input: wo.extend({ data: noteSchema }) },
       { id, data: input },
       ({ db, user, input }) => workOrdersService.addNote(db, user, input.id, input.data),
     ),
@@ -109,8 +123,10 @@ export async function addNoteAction(id: string, input: NoteInput) {
 
 export async function deleteNoteAction(id: string, noteId: string) {
   return done(
-    await runAction({ roles: OPS, input: wo.extend({ noteId: idParam }) }, { id, noteId }, ({ db, user, input }) =>
-      workOrdersService.removeNote(db, user, input.id, input.noteId),
+    await runAction(
+      { roles: OPS, permission: "workOrders:delete", input: wo.extend({ noteId: idParam }) },
+      { id, noteId },
+      ({ db, user, input }) => workOrdersService.removeNote(db, user, input.id, input.noteId),
     ),
   );
 }
@@ -118,7 +134,7 @@ export async function deleteNoteAction(id: string, noteId: string) {
 export async function applyChecklistTemplateAction(id: string, templateId: string) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ templateId: idParam }) },
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ templateId: idParam }) },
       { id, templateId },
       ({ db, user, input }) => workOrdersService.applyTemplate(db, user, input.id, input.templateId),
     ),
@@ -127,8 +143,10 @@ export async function applyChecklistTemplateAction(id: string, templateId: strin
 
 export async function addChecklistItemAction(id: string, text: string) {
   return done(
-    await runAction({ roles: OPS, input: wo.merge(checklistItemSchema) }, { id, text }, ({ db, user, input }) =>
-      workOrdersService.addChecklistItem(db, user, input.id, input.text),
+    await runAction(
+      { roles: OPS, permission: "workOrders:create", input: wo.merge(checklistItemSchema) },
+      { id, text },
+      ({ db, user, input }) => workOrdersService.addChecklistItem(db, user, input.id, input.text),
     ),
   );
 }
@@ -136,7 +154,7 @@ export async function addChecklistItemAction(id: string, text: string) {
 export async function setChecklistItemAction(id: string, itemId: string, isDone: boolean) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ itemId: idParam, isDone: z.boolean() }) },
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ itemId: idParam, isDone: z.boolean() }) },
       { id, itemId, isDone },
       ({ db, user, input }) => workOrdersService.setChecklistItem(db, user, input.id, input.itemId, input.isDone),
     ),
@@ -145,8 +163,10 @@ export async function setChecklistItemAction(id: string, itemId: string, isDone:
 
 export async function deleteChecklistItemAction(id: string, itemId: string) {
   return done(
-    await runAction({ roles: OPS, input: wo.extend({ itemId: idParam }) }, { id, itemId }, ({ db, input }) =>
-      workOrdersService.removeChecklistItem(db, input.id, input.itemId),
+    await runAction(
+      { roles: OPS, permission: "workOrders:delete", input: wo.extend({ itemId: idParam }) },
+      { id, itemId },
+      ({ db, input }) => workOrdersService.removeChecklistItem(db, input.id, input.itemId),
     ),
   );
 }
@@ -154,9 +174,45 @@ export async function deleteChecklistItemAction(id: string, itemId: string) {
 export async function deleteAttachmentAction(id: string, attachmentId: string) {
   return done(
     await runAction(
-      { roles: OPS, input: wo.extend({ attachmentId: idParam }) },
+      { roles: OPS, permission: "workOrders:delete", input: wo.extend({ attachmentId: idParam }) },
       { id, attachmentId },
       ({ db, input }) => workOrdersService.removeAttachment(db, input.id, input.attachmentId),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------- extra issues found on site
+
+export async function addIssueAction(id: string, input: IssueInput) {
+  return done(
+    await runAction(
+      { roles: OPS, permission: "workOrders:create", input: wo.extend({ data: issueSchema }) },
+      { id, data: input },
+      ({ db, user, input }) => workOrdersService.addIssue(db, user, input.id, input.data),
+    ),
+  );
+}
+
+export async function updateIssueAction(id: string, issueId: string, input: IssueInput) {
+  return done(
+    await runAction(
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ issueId: idParam, data: issueSchema }) },
+      { id, issueId, data: input },
+      async ({ db, input }) => {
+        await workOrdersService.updateIssue(db, input.id, input.issueId, input.data);
+      },
+    ),
+  );
+}
+
+export async function deleteIssueAction(id: string, issueId: string) {
+  return done(
+    await runAction(
+      { roles: OPS, permission: "workOrders:delete", input: wo.extend({ issueId: idParam }) },
+      { id, issueId },
+      async ({ db, input }) => {
+        await workOrdersService.removeIssue(db, input.id, input.issueId);
+      },
     ),
   );
 }

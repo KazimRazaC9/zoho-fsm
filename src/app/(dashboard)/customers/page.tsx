@@ -7,7 +7,7 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { CUSTOMER_TYPE_LABEL, CUSTOMER_TYPES, customerListQuerySchema, customersService } from "@/modules/customers";
 
 export const metadata: Metadata = { title: "Customers" };
@@ -18,6 +18,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/customers");
   const q = customerListQuerySchema.parse(sp);
   const result = await customersService.list(dbFor(user), q);
 
@@ -34,7 +35,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <SearchInput placeholder="Search name, phone, email, address" />
+        <SearchInput placeholder="Search name, project, phone, email, address" />
         <UrlSelect
           param="type"
           label="Type"
@@ -54,6 +55,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
           <TableHeader>
             <TableRow>
               <TableHead>Customer</TableHead>
+              <TableHead className="hidden md:table-cell">Projects</TableHead>
               <TableHead className="hidden md:table-cell">Contact</TableHead>
               <TableHead className="hidden lg:table-cell">Primary address</TableHead>
               <TableHead className="text-right">Sites</TableHead>
@@ -64,7 +66,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
           <TableBody>
             {result.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground py-10 text-center">
+                <TableCell colSpan={7} className="text-muted-foreground py-10 text-center">
                   {q.search || q.type ? "No customers match these filters." : "No customers yet. Add your first one."}
                 </TableCell>
               </TableRow>
@@ -83,6 +85,19 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
                       {CUSTOMER_TYPE_LABEL[c.type]}
                     </Badge>
                   </div>
+                </TableCell>
+                <TableCell className="hidden text-sm md:table-cell">
+                  {c.projectNames.length === 0 ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {c.projectNames.map((n) => (
+                        <Badge key={n} variant="outline" className="text-[11px]">
+                          {n}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
                   <div>{c.phone ?? "—"}</div>

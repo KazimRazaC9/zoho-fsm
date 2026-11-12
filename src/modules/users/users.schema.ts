@@ -36,6 +36,7 @@ const userFields = {
   email: emailSchema,
   phone: optionalText(50),
   role: z.enum(STAFF_ROLES),
+  customRoleId: z.string().min(1).nullable().optional(),
 };
 
 export const createUserSchema = z.object({
@@ -70,6 +71,8 @@ export type UserDto = {
   email: string;
   phone: string | null;
   role: StaffRole;
+  customRoleId: string | null;
+  customRoleName: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;

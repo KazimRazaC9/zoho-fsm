@@ -42,7 +42,8 @@ export function WorkOrderStatusBadge({ status }: { status: WorkOrderStatus }) {
     DISPATCHED: tone.blue,
     IN_PROGRESS: tone.amber,
     ON_HOLD: tone.amber,
-    COMPLETED: tone.green,
+    COMPLETED: tone.amber,
+    CLOSED: tone.green,
     CANCELLED: tone.gray,
   }[status];
   return (

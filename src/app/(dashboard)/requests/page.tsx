@@ -9,7 +9,7 @@ import { PriorityText } from "@/components/domain/badges";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { checklistsService } from "@/modules/checklists";
 import { customersService } from "@/modules/customers";
 import {
@@ -32,6 +32,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Sea
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/requests");
   const db = dbFor(user);
   const q = requestListQuerySchema.parse(sp);
   const [result, customers, templates] = await Promise.all([
@@ -106,6 +107,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Sea
                     )}
                     {r.assetName && <span className="text-muted-foreground"> · {r.assetName}</span>}
                   </p>
+                  {r.zohoTicket && <p className="text-muted-foreground text-xs">Zoho: {r.zohoTicket}</p>}
                   {(r.contactName || r.contactPhone) && (
                     <p className="text-muted-foreground text-xs">
                       {[r.contactName, r.contactPhone].filter(Boolean).join(" · ")}

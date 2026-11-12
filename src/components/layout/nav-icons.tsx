@@ -12,6 +12,7 @@ import {
   Map,
   Receipt,
   Settings,
+  ShieldCheck,
   Tags,
   UserCog,
   Users,
@@ -38,4 +39,5 @@ export const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   companies: Building2,
   jobs: Wrench,
   checklists: ClipboardCheck,
+  roles: ShieldCheck,
 };

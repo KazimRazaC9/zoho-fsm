@@ -6,7 +6,7 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { formatCurrency, formatQty } from "@/lib/format";
 import {
   catalogService,
@@ -25,6 +25,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Sear
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN"]);
+  requirePagePermission(user, "/catalog");
   const db = dbFor(user);
   const q = serviceItemListQuerySchema.parse(sp);
   const [result, company] = await Promise.all([catalogService.list(db, q), companiesService.getSettings(db, user)]);

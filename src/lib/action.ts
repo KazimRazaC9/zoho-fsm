@@ -2,11 +2,12 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { ZodError, type z } from "zod";
 import type { ActionResult } from "./action-result";
-import { dbFor, requireRole, requireUser, type CurrentUser } from "./auth";
+import { dbFor, requireBuiltinRole, requirePermission, requireRole, requireUser, type CurrentUser } from "./auth";
 import type { AppDb } from "./db";
 import { AppError, type FieldErrors } from "./errors";
 import { logger } from "./logger";
 import type { AppRole } from "./roles";
+import type { PermissionRule } from "./permissions";
 
 /**
  * Runs a server action with the same rules as an API route: signed-in user, role check, zod
@@ -17,13 +18,20 @@ import type { AppRole } from "./roles";
  *   }
  */
 export async function runAction<TInput, TOut>(
-  opts: { roles?: readonly AppRole[]; input: z.ZodType<TInput, z.ZodTypeDef, unknown> },
+  opts: {
+    roles?: readonly AppRole[];
+    permission?: PermissionRule;
+    builtinOnly?: boolean;
+    input: z.ZodType<TInput, z.ZodTypeDef, unknown>;
+  },
   raw: unknown,
   handler: (ctx: { input: TInput; user: CurrentUser; db: AppDb }) => Promise<TOut>,
 ): Promise<ActionResult<TOut>> {
   try {
     const user = await requireUser();
-    if (opts.roles) requireRole(user, opts.roles);
+    if (opts.builtinOnly && opts.roles) requireBuiltinRole(user, opts.roles);
+    else if (opts.roles) requireRole(user, opts.roles);
+    requirePermission(user, opts.permission ?? null);
     const input = opts.input.parse(raw);
     const data = await handler({ input, user, db: dbFor(user) });
     return { ok: true, data };

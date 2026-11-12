@@ -30,6 +30,8 @@ const blank = (customerId = ""): CreateWorkOrderInput => ({
   assetId: "",
   title: "",
   description: "",
+  zohoTicket: "",
+  purchaseOrder: "",
   priority: "MEDIUM",
   dueDate: "",
   checklistTemplateId: "",
@@ -41,6 +43,8 @@ const fromDetail = (w: WorkOrderDetail): CreateWorkOrderInput => ({
   assetId: w.assetId ?? "",
   title: w.title,
   description: w.description ?? "",
+  zohoTicket: w.zohoTicket ?? "",
+  purchaseOrder: w.purchaseOrder ?? "",
   priority: w.priority,
   dueDate: w.dueDateLocal,
   checklistTemplateId: "",
@@ -105,6 +109,14 @@ export function WorkOrderSheet({
           <Field label="Title" htmlFor="wo-title" error={e.title?.message}>
             <Input id="wo-title" {...register("title")} aria-invalid={!!e.title} />
           </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Zoho ticket" htmlFor="wo-zoho" hint="Optional" error={e.zohoTicket?.message}>
+              <Input id="wo-zoho" type="text" placeholder="Ticket number or link" {...register("zohoTicket")} />
+            </Field>
+            <Field label="Purchase order (PO)" htmlFor="wo-po" hint="Optional" error={e.purchaseOrder?.message}>
+              <Input id="wo-po" type="text" placeholder="Customer PO number" {...register("purchaseOrder")} />
+            </Field>
+          </div>
           <Field label="Description" htmlFor="wo-desc" error={e.description?.message}>
             <Textarea id="wo-desc" rows={4} {...register("description")} />
           </Field>

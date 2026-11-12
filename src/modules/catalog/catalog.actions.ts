@@ -19,7 +19,11 @@ function done<T>(res: ActionResult<T>) {
 export async function saveItemAction(id: string | null, input: ServiceItemInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: z.object({ id: idParam.nullable(), data: serviceItemSchema }) },
+      {
+        roles: ADMIN,
+        permission: id ? "catalog:edit" : "catalog:create",
+        input: z.object({ id: idParam.nullable(), data: serviceItemSchema }),
+      },
       { id, data: input },
       ({ db, user, input }) =>
         input.id ? catalogService.update(db, input.id, input.data) : catalogService.create(db, user, input.data),
@@ -30,7 +34,7 @@ export async function saveItemAction(id: string | null, input: ServiceItemInput)
 export async function setItemActiveAction(id: string, isActive: boolean) {
   return done(
     await runAction(
-      { roles: ADMIN, input: setItemActiveSchema.extend({ id: idParam }) },
+      { roles: ADMIN, permission: "catalog:edit", input: setItemActiveSchema.extend({ id: idParam }) },
       { id, isActive },
       ({ db, input }) => catalogService.setActive(db, input.id, input.isActive),
     ),
@@ -40,7 +44,7 @@ export async function setItemActiveAction(id: string, isActive: boolean) {
 export async function adjustStockAction(id: string, delta: number) {
   return done(
     await runAction(
-      { roles: ADMIN, input: stockAdjustSchema.extend({ id: idParam }) },
+      { roles: ADMIN, permission: "catalog:edit", input: stockAdjustSchema.extend({ id: idParam }) },
       { id, delta },
       ({ db, input }) => catalogService.adjustStock(db, input.id, input.delta),
     ),
@@ -49,8 +53,10 @@ export async function adjustStockAction(id: string, delta: number) {
 
 export async function deleteItemAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: z.object({ id: idParam }) }, { id }, ({ db, input }) =>
-      catalogService.remove(db, input.id),
+    await runAction(
+      { roles: ADMIN, permission: "catalog:delete", input: z.object({ id: idParam }) },
+      { id },
+      ({ db, input }) => catalogService.remove(db, input.id),
     ),
   );
 }

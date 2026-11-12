@@ -8,7 +8,7 @@ import { EstimateStatusBadge } from "@/components/domain/badges";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { formatCurrency, formatDay } from "@/lib/format";
 import { companiesService } from "@/modules/companies";
 import { customersService } from "@/modules/customers";
@@ -28,6 +28,7 @@ export default async function EstimatesPage({ searchParams }: { searchParams: Se
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/estimates");
   const db = dbFor(user);
   const q = estimateListQuerySchema.parse(sp);
   const fromRequest = typeof sp.request === "string" ? sp.request : "";

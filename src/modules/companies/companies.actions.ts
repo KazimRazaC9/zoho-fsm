@@ -14,8 +14,10 @@ import { idParam } from "@/lib/validation";
 import { z } from "zod";
 
 export async function updateCompanySettingsAction(input: CompanySettingsInput) {
-  const res = await runAction({ roles: ["ADMIN"], input: companySettingsSchema }, input, ({ db, user, input }) =>
-    companiesService.updateSettings(db, user, input),
+  const res = await runAction(
+    { roles: ["ADMIN"], permission: "settings:edit", input: companySettingsSchema },
+    input,
+    ({ db, user, input }) => companiesService.updateSettings(db, user, input),
   );
   if (res.ok) revalidatePath("/", "layout");
   return res;

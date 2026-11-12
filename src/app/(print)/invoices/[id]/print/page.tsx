@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PrintSheet } from "@/components/domain/print-sheet";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePermission, requireRole, requireUser } from "@/lib/auth";
 import { NotFoundError } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
 import { companiesService } from "@/modules/companies";
@@ -13,6 +13,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePermission(user, "invoices:view");
   const db = dbFor(user);
   const i = await invoicesService.get(db, user, id).catch((err) => {
     if (err instanceof NotFoundError) notFound();

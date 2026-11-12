@@ -22,7 +22,7 @@ function done<T>(res: ActionResult<T>) {
 export async function scheduleWorkOrderAction(workOrderId: string, input: ScheduleInput) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam, data: scheduleSchema }) },
+      { roles: OPS, permission: "dispatch:edit", input: z.object({ id: idParam, data: scheduleSchema }) },
       { id: workOrderId, data: input },
       ({ db, user, input }) => schedulingService.schedule(db, user, input.id, input.data),
     ),
@@ -33,7 +33,7 @@ export async function scheduleWorkOrderAction(workOrderId: string, input: Schedu
 export async function unscheduleWorkOrderAction(workOrderId: string) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam }) },
+      { roles: OPS, permission: "dispatch:edit", input: z.object({ id: idParam }) },
       { id: workOrderId },
       async ({ db, user, input }) => {
         await schedulingService.unschedule(db, user, input.id);

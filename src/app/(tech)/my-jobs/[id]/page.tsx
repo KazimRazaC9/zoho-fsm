@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { JobView } from "./job-client";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePermission, requireRole, requireUser } from "@/lib/auth";
 import { NotFoundError } from "@/lib/errors";
 import { fieldService } from "@/modules/field";
 
@@ -13,6 +13,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["TECHNICIAN"]);
+  requirePermission(user, "field:view");
   const db = dbFor(user);
   const [job, parts] = await Promise.all([
     fieldService.job(db, user, id).catch((e) => {

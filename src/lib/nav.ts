@@ -31,7 +31,8 @@ export type NavIcon =
   | "settings"
   | "companies"
   | "jobs"
-  | "checklists";
+  | "checklists"
+  | "roles";
 
 const OPS: AppRole[] = ["ADMIN", "DISPATCHER"];
 const ADMIN: AppRole[] = ["ADMIN"];
@@ -49,6 +50,7 @@ export const NAV: NavItem[] = [
   { href: "/maintenance", label: "Maintenance plans", icon: "maintenance", roles: ADMIN, phase: 7, group: "Billing" },
   { href: "/reports", label: "Reports", icon: "reports", roles: ADMIN, phase: 8, group: "Insights" },
   { href: "/users", label: "Users & technicians", icon: "users", roles: ADMIN, phase: 1, group: "Admin" },
+  { href: "/roles", label: "Role management", icon: "roles", roles: ADMIN, phase: 1, group: "Admin" },
   { href: "/catalog", label: "Service catalog", icon: "catalog", roles: ADMIN, phase: 2, group: "Admin" },
   { href: "/checklists", label: "Checklist templates", icon: "checklists", roles: ADMIN, phase: 3, group: "Admin" },
   { href: "/settings", label: "Company settings", icon: "settings", roles: ADMIN, phase: 1, group: "Admin" },

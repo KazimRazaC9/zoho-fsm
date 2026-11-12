@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CompanySettingsForm } from "./company-settings-form";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { companiesService } from "@/modules/companies";
 
 export const metadata: Metadata = { title: "Company settings" };
@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: "Company settings" };
 export default async function SettingsPage() {
   const user = await requireUser();
   requireRole(user, ["ADMIN"]);
+  requirePagePermission(user, "/settings");
   const company = await companiesService.getSettings(dbFor(user), user);
 
   return (

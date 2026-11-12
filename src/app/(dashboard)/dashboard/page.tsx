@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireUser } from "@/lib/auth";
 import { navFor } from "@/lib/nav";
+import { hasPermission, permissionForPage } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/lib/roles";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: "Dashboard" };
  */
 export default async function DashboardPage() {
   const user = await requireUser();
+  requirePagePermission(user, "/dashboard");
   const db = dbFor(user);
 
   const [company, customers, workOrders, technicians] = await Promise.all([
@@ -30,7 +32,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Welcome, {user.fullName.split(" ")[0]}</h1>
         <p className="text-muted-foreground text-sm">
-          {ROLE_LABEL[user.role]} · {company?.name} · {company?.timeZone} · {company?.currency}
+          {user.customRoleName ?? ROLE_LABEL[user.role]} · {company?.name} · {company?.timeZone} · {company?.currency}
         </p>
       </div>
 
@@ -62,16 +64,24 @@ export default async function DashboardPage() {
           <CardDescription>Menu items available to your role and the phase that delivers each one.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {navFor(user.role).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="hover:bg-accent flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-            >
-              {item.label}
-              <Badge variant="outline">Phase {item.phase}</Badge>
-            </Link>
-          ))}
+          {navFor(user.role)
+            .filter((item) => {
+              const permission = permissionForPage(item.href);
+              return (
+                !user.customRoleId ||
+                (item.href !== "/roles" && !!permission && hasPermission(user.permissions, permission))
+              );
+            })
+            .map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="hover:bg-accent flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+              >
+                {item.label}
+                <Badge variant="outline">Phase {item.phase}</Badge>
+              </Link>
+            ))}
         </CardContent>
       </Card>
     </div>

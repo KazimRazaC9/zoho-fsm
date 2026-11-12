@@ -273,7 +273,12 @@ export const invoicesService = {
       },
     });
     if (!wo) throw new NotFoundError("Work order", workOrderId);
-    if (wo.status !== "COMPLETED") throw new ConflictError(`${wo.number} must be completed before it is invoiced.`);
+    if (wo.status !== "CLOSED")
+      throw new ConflictError(
+        wo.status === "COMPLETED"
+          ? `${wo.number} is waiting for QA. Close it before it is invoiced.`
+          : `${wo.number} must be closed (QA verified) before it is invoiced.`,
+      );
     const existing = await db.invoice.findFirst({
       where: { workOrderId, status: { not: "VOID" } },
       select: { number: true },

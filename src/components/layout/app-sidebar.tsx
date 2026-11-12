@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { NAV_ICONS } from "./nav-icons";
 import { Button } from "@/components/ui/button";
 import { navFor, type NavItem } from "@/lib/nav";
+import { hasPermission, permissionForPage, type AppPermission } from "@/lib/permissions";
 import type { AppRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +15,14 @@ const STORAGE_KEY = "fieldserve.sidebar.collapsed";
 
 export function AppSidebar({
   role,
+  customRoleId,
+  permissions,
   mobileOpen,
   onNavigate,
 }: {
   role: AppRole;
+  customRoleId: string | null;
+  permissions: AppPermission[];
   mobileOpen: boolean;
   onNavigate: () => void;
 }) {
@@ -43,7 +48,13 @@ export function AppSidebar({
     });
   };
 
-  const groups = navFor(role).reduce<Record<string, NavItem[]>>((acc, item) => {
+  const visibleNav = navFor(role).filter((item) => {
+    if (!customRoleId) return true;
+    if (item.href === "/roles") return false;
+    const permission = permissionForPage(item.href);
+    return !!permission && hasPermission(permissions, permission);
+  });
+  const groups = visibleNav.reduce<Record<string, NavItem[]>>((acc, item) => {
     (acc[item.group] ??= []).push(item);
     return acc;
   }, {});
@@ -63,7 +74,10 @@ export function AppSidebar({
         {!collapsed && <span className="font-semibold">FieldServe</span>}
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Main">
+      <nav
+        className="flex-1 [scrollbar-width:none] space-y-4 overflow-y-auto px-2 py-2 [&::-webkit-scrollbar]:hidden"
+        aria-label="Main"
+      >
         {Object.entries(groups).map(([group, items]) => (
           <div key={group} className="space-y-1">
             {!collapsed && (

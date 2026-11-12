@@ -13,9 +13,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ROLE_LABEL, type AppRole } from "@/lib/roles";
-import { logoutAction } from "@/modules/auth/auth.actions";
+import type { AppPermission } from "@/lib/permissions";
 
-export type MenuUser = { name: string; email: string; role: AppRole; companyName: string | null };
+export type MenuUser = {
+  name: string;
+  email: string;
+  role: AppRole;
+  customRoleId: string | null;
+  customRoleName: string | null;
+  permissions: AppPermission[];
+  companyName: string | null;
+};
 
 const initials = (name: string) =>
   name
@@ -41,7 +49,7 @@ export function UserMenu({ user }: { user: MenuUser }) {
           <p className="truncate font-medium">{user.name}</p>
           <p className="text-muted-foreground truncate text-xs font-normal">{user.email}</p>
           <p className="text-muted-foreground text-xs font-normal">
-            {ROLE_LABEL[user.role]}
+            {user.customRoleName ?? ROLE_LABEL[user.role]}
             {user.companyName ? ` · ${user.companyName}` : ""}
           </p>
         </DropdownMenuLabel>
@@ -52,13 +60,13 @@ export function UserMenu({ user }: { user: MenuUser }) {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <form action={logoutAction}>
-          <DropdownMenuItem asChild>
-            <button type="submit" className="w-full">
-              <LogOut /> Sign out
-            </button>
-          </DropdownMenuItem>
-        </form>
+        <DropdownMenuItem asChild>
+          {/* A plain anchor on purpose: next/link would prefetch this URL and sign the user out as the menu opens. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/api/session/end">
+            <LogOut /> Sign out
+          </a>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,6 +1,7 @@
 import type { AttachmentKind, Priority, WorkOrderStatus } from "@prisma/client";
 import { z } from "zod";
 import { idParam, moneySchema, optionalText, percentSchema, requiredText } from "@/lib/validation";
+import { ISSUE_STATUSES, type EvidenceKind, type IssueStatusValue } from "./evidence";
 import { WORK_ORDER_STATUSES } from "./work-order-status";
 
 export const PRIORITIES = ["HIGH", "MEDIUM", "LOW"] as const;
@@ -18,11 +19,15 @@ export const jobTargetFields = {
   assetId: z.union([z.literal(""), idParam]),
   title: requiredText(200, "Title"),
   description: optionalText(4000),
+  /** Optional free text: the Zoho ticket number or link (kept on the request and its work order). */
+  zohoTicket: optionalText(100).optional(),
   priority: z.enum(PRIORITIES),
 };
 
 export const workOrderSchema = z.object({
   ...jobTargetFields,
+  /** Optional free text: the customer purchase order number. */
+  purchaseOrder: optionalText(100).optional(),
   dueDate: localDateTime,
 });
 export type WorkOrderInput = z.infer<typeof workOrderSchema>;
@@ -61,6 +66,14 @@ export type NoteInput = z.infer<typeof noteSchema>;
 
 export const checklistItemSchema = z.object({ text: requiredText(300, "Item") });
 
+/** Something found on site besides the reported problem. */
+export const issueSchema = z.object({
+  title: requiredText(120, "Issue"),
+  details: optionalText(1000),
+  status: z.enum(ISSUE_STATUSES),
+});
+export type IssueInput = z.infer<typeof issueSchema>;
+
 export const workOrderListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(20),
@@ -87,6 +100,7 @@ export type WorkOrderListItem = {
   customerName: string;
   siteLabel: string | null;
   assetName: string | null;
+  zohoTicket: string | null;
   dueDate: string | null;
   overdue: boolean;
   createdAt: string;
@@ -102,8 +116,33 @@ export type WorkOrderLineDto = {
   lineTotal: number;
 };
 
+/** A before/after photo or video. */
+export type MediaDto = {
+  id: string;
+  fileName: string;
+  kind: EvidenceKind;
+  contentType: string | null;
+  createdAt: string;
+  author: string | null;
+  /** The user who uploaded it (a technician may remove only their own). */
+  authorId: string | null;
+};
+
+export type EvidenceDto = { before: MediaDto[]; after: MediaDto[] };
+
+export type IssueDto = {
+  id: string;
+  title: string;
+  details: string | null;
+  status: IssueStatusValue;
+  createdAt: string;
+  author: string | null;
+  evidence: EvidenceDto;
+};
+
 export type WorkOrderDetail = WorkOrderListItem & {
   description: string | null;
+  purchaseOrder: string | null;
   completedAt: string | null;
   /** Due date as "YYYY-MM-DDTHH:mm" in the company's zone (for the edit form); "" when none. */
   dueDateLocal: string;
@@ -128,6 +167,11 @@ export type WorkOrderDetail = WorkOrderListItem & {
     authorId: string | null;
     createdAt: string;
   }[];
+  /** Proof for the reported problem (before / after). */
+  evidence: EvidenceDto;
+  /** Extra problems found on site, each with its own proof. */
+  issues: IssueDto[];
+  /** Ordinary files: documents, photos and signatures that are not before/after proof. */
   attachments: {
     id: string;
     fileName: string;

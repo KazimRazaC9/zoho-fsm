@@ -4,6 +4,13 @@ import { cache } from "react";
 import { auth } from "@/auth";
 import { createDb, systemContext, systemDb, tenantContext, type AppDb } from "./db";
 import { ForbiddenError, UnauthorizedError } from "./errors";
+import {
+  hasPermission,
+  parsePermissions,
+  permissionForPage,
+  type AppPermission,
+  type PermissionRule,
+} from "./permissions";
 import type { AppRole } from "./roles";
 import { bearerFrom, verifyAccessToken } from "./tokens";
 
@@ -11,6 +18,9 @@ import { bearerFrom, verifyAccessToken } from "./tokens";
 export type CurrentUser = {
   id: string;
   role: AppRole;
+  customRoleId: string | null;
+  customRoleName: string | null;
+  permissions: AppPermission[];
   companyId: string | null;
   fullName: string;
   email: string;
@@ -28,6 +38,8 @@ const liveAccount = cache(async (userId: string) => {
     select: {
       isActive: true,
       role: true,
+      customRoleId: true,
+      customRole: { select: { name: true, permissions: true } },
       companyId: true,
       fullName: true,
       email: true,
@@ -60,6 +72,9 @@ export async function getCurrentUser(reqHeaders?: Headers): Promise<CurrentUser 
   return {
     id: identity.id,
     role: account.role as AppRole,
+    customRoleId: account.customRoleId,
+    customRoleName: account.customRole?.name ?? null,
+    permissions: parsePermissions(account.customRole?.permissions),
     companyId: account.companyId,
     fullName: account.fullName,
     email: account.email,
@@ -75,6 +90,24 @@ export async function requireUser(reqHeaders?: Headers): Promise<CurrentUser> {
 
 export function requireRole(user: CurrentUser, roles: readonly AppRole[]) {
   if (!roles.includes(user.role)) throw new ForbiddenError();
+}
+
+export function requireBuiltinRole(user: CurrentUser, roles: readonly AppRole[]) {
+  if (user.customRoleId || !roles.includes(user.role)) throw new ForbiddenError();
+}
+
+/** Built-in roles are gated by `requireRole`; custom roles must also hold the permission (any of a list). */
+export function requirePermission(user: CurrentUser, permission: PermissionRule | null) {
+  if (!user.customRoleId) return;
+  const needed: readonly AppPermission[] =
+    permission === null ? [] : typeof permission === "string" ? [permission] : permission;
+  if (!needed.some((p) => hasPermission(user.permissions, p))) {
+    throw new ForbiddenError("Your role does not have permission to do this.");
+  }
+}
+
+export function requirePagePermission(user: CurrentUser, pathname: string) {
+  requirePermission(user, permissionForPage(pathname));
 }
 
 /**

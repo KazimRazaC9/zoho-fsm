@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { NewTemplateButton, TemplateActions } from "./checklists-client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { checklistsService } from "@/modules/checklists";
 
 export const metadata: Metadata = { title: "Checklist templates" };
@@ -10,6 +10,7 @@ export const metadata: Metadata = { title: "Checklist templates" };
 export default async function ChecklistsPage() {
   const user = await requireUser();
   requireRole(user, ["ADMIN"]);
+  requirePagePermission(user, "/checklists");
   const templates = await checklistsService.list(dbFor(user));
 
   return (

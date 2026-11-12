@@ -309,7 +309,7 @@ export const estimatesService = {
     const req = r.requestId
       ? await db.serviceRequest.findFirst({
           where: { id: r.requestId },
-          select: { title: true, description: true, priority: true, assetId: true },
+          select: { title: true, description: true, priority: true, assetId: true, zohoTicket: true },
         })
       : null;
 
@@ -323,6 +323,8 @@ export const estimatesService = {
           assetId: req?.assetId ?? "",
           title: req?.title ?? `Work for ${r.number}`,
           description: req?.description ?? r.notes ?? "",
+          zohoTicket: req?.zohoTicket ?? "",
+          purchaseOrder: "",
           priority: req?.priority ?? "MEDIUM",
           dueDate: input.dueDate,
           checklistTemplateId: input.checklistTemplateId,

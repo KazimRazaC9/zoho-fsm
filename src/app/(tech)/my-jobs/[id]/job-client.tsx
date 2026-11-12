@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
+import { EvidenceSection } from "@/components/domain/evidence-section";
 import { Field, NativeSelect } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,10 +39,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { mapsUrl } from "@/modules/customers/customers.schema";
 import {
+  addJobIssueAction,
   addJobNoteAction,
   addJobPartAction,
+  deleteJobFileAction,
+  deleteJobIssueAction,
   setJobChecklistAction,
   transitionJobAction,
+  updateJobIssueAction,
 } from "@/modules/field/field.actions";
 import {
   FIELD_ACTION_LABEL,
@@ -161,6 +166,21 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
 
       <Checklist job={job} done={doneCount} onChange={refresh} />
       <Parts job={job} parts={parts} onChange={refresh} />
+      <EvidenceSection
+        evidence={job.evidence}
+        issues={job.issues}
+        closed={job.closed}
+        meId={job.meId}
+        canDeleteAny={false}
+        capture
+        api={{
+          uploadUrl: `/api/v1/field/jobs/${job.id}/attachments`,
+          addIssue: (input) => addJobIssueAction(job.id, input),
+          updateIssue: (issueId, input) => updateJobIssueAction(job.id, issueId, input),
+          deleteIssue: (issueId) => deleteJobIssueAction(job.id, issueId),
+          deleteFile: (attachmentId) => deleteJobFileAction(job.id, attachmentId),
+        }}
+      />
       <Photos job={job} onChange={refresh} />
       <Notes job={job} onChange={refresh} />
 
@@ -434,7 +454,7 @@ function Photos({ job, onChange }: { job: FieldJobDetail; onChange: () => void }
           ))}
         </div>
       )}
-      {photos.length === 0 && <p className="text-muted-foreground text-sm">Take before/after photos of the work.</p>}
+      {photos.length === 0 && <p className="text-muted-foreground text-sm">Any other photos of the job (optional).</p>}
       {!job.closed && (
         <>
           <input

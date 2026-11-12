@@ -10,6 +10,7 @@ export const WORK_ORDER_STATUS_LABEL: Record<WorkOrderStatus, string> = {
   IN_PROGRESS: "In progress",
   ON_HOLD: "On hold",
   COMPLETED: "Completed",
+  CLOSED: "Closed",
   CANCELLED: "Cancelled",
 };
 

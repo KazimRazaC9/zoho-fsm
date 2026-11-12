@@ -17,6 +17,7 @@ import type { CurrentUser } from "@/lib/auth";
 import type { AppDb } from "@/lib/db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { paged, type PagedResult } from "@/lib/pagination";
+import { parsePermissions } from "@/lib/permissions";
 import { nullIfEmpty } from "@/lib/validation";
 
 export function toUserDto(u: UserRow): UserDto {
@@ -27,6 +28,8 @@ export function toUserDto(u: UserRow): UserDto {
     email: u.email,
     phone: u.phone,
     role: u.role as StaffRole,
+    customRoleId: u.customRoleId,
+    customRoleName: u.customRole?.name ?? null,
     isActive: u.isActive,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
@@ -73,9 +76,26 @@ async function getOrThrow(db: AppDb, id: string) {
   return u;
 }
 
+/**
+ * A user with a custom role may only manage users whose access sits inside their own: never a
+ * built-in account (Admin, Dispatcher, Technician) and never a role with permissions they lack.
+ * Otherwise "edit users" would let them reset an Admin's password and take the account over.
+ */
+function assertMayManage(actor: CurrentUser, target: UserRow) {
+  if (!actor.customRoleId || target.id === actor.id) return;
+  const theirs = parsePermissions(target.customRole?.permissions);
+  const within = !!target.customRoleId && theirs.every((p) => actor.permissions.includes(p));
+  if (!within) throw new ForbiddenError("You can only manage users whose access is within your own.");
+}
+
 /** A company must always keep at least one active Admin. */
 async function assertNotLastAdmin(db: AppDb, target: UserRow, message: string) {
-  if (target.role === "ADMIN" && target.isActive && (await usersRepository.countActiveAdmins(db, target.id)) === 0) {
+  if (
+    target.role === "ADMIN" &&
+    target.customRoleId === null &&
+    target.isActive &&
+    (await usersRepository.countActiveAdmins(db, target.id)) === 0
+  ) {
     throw new ConflictError(message);
   }
 }
@@ -123,6 +143,20 @@ export const usersService = {
 
   async create(db: AppDb, actor: CurrentUser, input: CreateUserInput): Promise<UserDto> {
     const companyId = companyOf(actor);
+    if (actor.customRoleId && (input.role !== actor.role || input.customRoleId !== actor.customRoleId)) {
+      throw new ForbiddenError("You can only add a user with your own role.");
+    }
+    if (input.customRoleId) {
+      const customRole = await db.customRole.findUnique({
+        where: { id: input.customRoleId },
+        select: { baseRole: true },
+      });
+      if (!customRole || customRole.baseRole !== input.role) {
+        throw new BadRequestError("Choose a custom role matching the selected staff type.", {
+          customRoleId: ["This custom role is unavailable for the selected staff type."],
+        });
+      }
+    }
     const passwordHash = await hashPassword(input.password);
     try {
       return await db.$withTx(async () => {
@@ -132,6 +166,7 @@ export const usersService = {
           email: input.email,
           phone: nullIfEmpty(input.phone),
           role: input.role,
+          customRoleId: input.customRoleId ?? null,
           passwordHash,
         });
         if (input.role !== "TECHNICIAN") return toUserDto(user);
@@ -151,10 +186,28 @@ export const usersService = {
   async update(db: AppDb, actor: CurrentUser, id: string, input: UpdateUserInput): Promise<UserDto> {
     const companyId = companyOf(actor);
     const current = await getOrThrow(db, id);
-    if (id === actor.id && input.role !== current.role) {
+    assertMayManage(actor, current);
+    const customRoleId = input.customRoleId === undefined ? current.customRoleId : input.customRoleId;
+    if (actor.customRoleId && (input.role !== actor.role || customRoleId !== actor.customRoleId)) {
+      throw new ForbiddenError("You can only assign your own role.");
+    }
+    if (customRoleId) {
+      const customRole = await db.customRole.findUnique({
+        where: { id: customRoleId },
+        select: { baseRole: true },
+      });
+      if (!customRole || customRole.baseRole !== input.role) {
+        throw new BadRequestError("Choose a custom role matching the selected staff type.", {
+          customRoleId: ["This custom role is unavailable for the selected staff type."],
+        });
+      }
+    }
+    if (id === actor.id && (input.role !== current.role || customRoleId !== current.customRoleId)) {
       throw new BadRequestError("You cannot change your own role.", { role: ["You cannot change your own role."] });
     }
-    if (input.role !== "ADMIN") await assertNotLastAdmin(db, current, "The company needs at least one active Admin.");
+    if (input.role !== "ADMIN" || customRoleId != null) {
+      await assertNotLastAdmin(db, current, "The company needs at least one active Admin.");
+    }
 
     try {
       return await db.$withTx(async () => {
@@ -163,6 +216,7 @@ export const usersService = {
           email: input.email,
           phone: nullIfEmpty(input.phone),
           role: input.role,
+          customRole: customRoleId ? { connect: { id: customRoleId } } : { disconnect: true },
         });
         // Becoming a technician: make sure there is a profile to schedule against.
         if (input.role === "TECHNICIAN" && (!current.technicianProfile || current.technicianProfile.deletedAt)) {
@@ -177,6 +231,7 @@ export const usersService = {
 
   async setActive(db: AppDb, actor: CurrentUser, id: string, isActive: boolean): Promise<UserDto> {
     const current = await getOrThrow(db, id);
+    assertMayManage(actor, current);
     if (!isActive) {
       if (id === actor.id) throw new BadRequestError("You cannot deactivate your own account.");
       await assertNotLastAdmin(db, current, "You cannot deactivate the last active Admin.");
@@ -187,7 +242,7 @@ export const usersService = {
   },
 
   async resetPassword(db: AppDb, actor: CurrentUser, id: string, password: string): Promise<void> {
-    await getOrThrow(db, id);
+    assertMayManage(actor, await getOrThrow(db, id));
     await usersRepository.update(db, id, { passwordHash: await hashPassword(password) });
     // The user must sign in again on every device with the new password.
     if (id !== actor.id) await authService.revokeSessionsForUsers([id]);
@@ -195,6 +250,7 @@ export const usersService = {
 
   async remove(db: AppDb, actor: CurrentUser, id: string): Promise<void> {
     const current = await getOrThrow(db, id);
+    assertMayManage(actor, current);
     if (id === actor.id) throw new BadRequestError("You cannot delete your own account.");
     await assertNotLastAdmin(db, current, "You cannot delete the last active Admin.");
     await usersRepository.softDelete(db, id);
@@ -209,6 +265,7 @@ export const usersService = {
   ): Promise<UserDto> {
     const companyId = companyOf(actor);
     const user = await getOrThrow(db, id);
+    assertMayManage(actor, user);
     if (user.role !== "TECHNICIAN") throw new BadRequestError("Only technicians have a technician profile.");
     await usersRepository.upsertTechnicianProfile(db, companyId, id, profileData(input));
     return toUserDto(await getOrThrow(db, id));

@@ -5,7 +5,7 @@ import { ChevronLeft, ExternalLink, FileText, Inbox, MapPin } from "lucide-react
 import { EstimateActions, EstimateLines } from "./estimate-client";
 import { EstimateStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { NotFoundError } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
 import { catalogService } from "@/modules/catalog";
@@ -21,6 +21,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/estimates");
   const db = dbFor(user);
 
   const estimate = await estimatesService.get(db, user, id).catch((e) => {

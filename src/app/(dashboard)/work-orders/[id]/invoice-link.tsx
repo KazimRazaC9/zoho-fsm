@@ -15,11 +15,14 @@ type InvoiceRef = { id: string; number: string; status: import("@prisma/client")
 export function InvoiceLink({
   workOrderId,
   completed,
+  awaitingQa = false,
   isAdmin,
   invoice,
 }: {
   workOrderId: string;
+  /** QA has closed the work order (the only state an invoice can be created from). */
   completed: boolean;
+  awaitingQa?: boolean;
   isAdmin: boolean;
   invoice: InvoiceRef;
 }) {
@@ -35,6 +38,8 @@ export function InvoiceLink({
       </Button>
     );
   }
+  if (awaitingQa && isAdmin)
+    return <span className="text-muted-foreground text-xs">Close it (QA) to create the invoice.</span>;
   if (!completed || !isAdmin) return null;
 
   return (

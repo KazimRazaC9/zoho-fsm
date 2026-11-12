@@ -28,7 +28,11 @@ const zoneOf = async (db: AppDb, user: CurrentUser) => (await companiesService.g
 export async function saveAssetAction(id: string | null, input: AssetInput) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam.nullable(), data: assetSchema }) },
+      {
+        roles: OPS,
+        permission: id ? "assets:edit" : "assets:create",
+        input: z.object({ id: idParam.nullable(), data: assetSchema }),
+      },
       { id, data: input },
       async ({ db, user, input }) => {
         const tz = await zoneOf(db, user);
@@ -40,10 +44,25 @@ export async function saveAssetAction(id: string | null, input: AssetInput) {
   );
 }
 
+/** Move an asset to another site of the same customer (or to none). */
+export async function moveAssetAction(id: string, addressId: string | null) {
+  return done(
+    await runAction(
+      { roles: OPS, permission: "assets:edit", input: z.object({ id: idParam, addressId: idParam.nullable() }) },
+      { id, addressId },
+      async ({ db, input }) => {
+        await assetsService.moveToSite(db, input.id, input.addressId);
+      },
+    ),
+  );
+}
+
 export async function deleteAssetAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: z.object({ id: idParam }) }, { id }, ({ db, input }) =>
-      assetsService.remove(db, input.id),
+    await runAction(
+      { roles: ADMIN, permission: "assets:delete", input: z.object({ id: idParam }) },
+      { id },
+      ({ db, input }) => assetsService.remove(db, input.id),
     ),
   );
 }

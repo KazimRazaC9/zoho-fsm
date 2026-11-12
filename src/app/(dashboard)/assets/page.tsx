@@ -7,7 +7,7 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { AssetStatusBadge, WarrantyBadge } from "@/components/domain/badges";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { formatDay } from "@/lib/format";
 import { formatIn } from "@/lib/tz";
 import {
@@ -29,6 +29,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Searc
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/assets");
   const db = dbFor(user);
   const q = assetListQuerySchema.parse(sp);
   const { timeZone } = await companiesService.getSettings(db, user);

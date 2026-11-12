@@ -172,13 +172,12 @@ describe("Phase 5 — technician field app", () => {
   it("photos and signature upload, are visible to the technician and satisfy the signature rule", async () => {
     const id = woIds[0];
     const png = new File([Buffer.from("89504e470d0a1a0a", "hex")], "sig.png", { type: "image/png" });
-    await fieldService.uploadFile(dbA, techA, id, png, true);
+    await fieldService.uploadFile(dbA, techA, id, png, { signature: true });
     await fieldService.uploadFile(
       dbA,
       techA,
       id,
       new File([Buffer.from("89504e470d0a1a0a", "hex")], "p.png", { type: "image/png" }),
-      false,
     );
     const atts = await owner.attachment.findMany({ where: { entityId: id } });
     storageKeys.push(...atts.map((a) => a.storageKey));

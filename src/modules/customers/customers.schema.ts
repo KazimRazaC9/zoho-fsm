@@ -1,13 +1,23 @@
 import { z } from "zod";
-import { latitudeText, longitudeText, optionalEmail, optionalText, requiredText } from "@/lib/validation";
+import { idParam, latitudeText, longitudeText, optionalEmail, optionalText, requiredText } from "@/lib/validation";
 
 export const CUSTOMER_TYPES = ["INDIVIDUAL", "BUSINESS"] as const;
 export type CustomerType = (typeof CUSTOMER_TYPES)[number];
 export const CUSTOMER_TYPE_LABEL: Record<CustomerType, string> = { INDIVIDUAL: "Individual", BUSINESS: "Business" };
 
+/** A customer's project, e.g. "Water DC" or "Drift Vans". Its sites hang under it. */
+export const projectSchema = z.object({
+  name: requiredText(120, "Project name"),
+  description: optionalText(500),
+});
+export type ProjectInput = z.infer<typeof projectSchema>;
+export const BLANK_PROJECT: ProjectInput = { name: "", description: "" };
+
 /** A service address (site). Latitude and longitude are text so an empty box stays "". */
 export const addressSchema = z
   .object({
+    /** "" = the site belongs to no project. */
+    projectId: z.union([z.literal(""), idParam]).optional(),
     label: optionalText(100),
     addressLine: requiredText(300, "Address"),
     city: optionalText(100),
@@ -24,6 +34,7 @@ export const addressSchema = z
 export type AddressInput = z.infer<typeof addressSchema>;
 
 export const BLANK_ADDRESS: AddressInput = {
+  projectId: "",
   label: "",
   addressLine: "",
   city: "",
@@ -67,8 +78,17 @@ export const customerListQuerySchema = z
   }));
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 
+export type ProjectDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  siteCount: number;
+};
+
 export type AddressDto = {
   id: string;
+  projectId: string | null;
+  projectName: string | null;
   label: string | null;
   addressLine: string;
   city: string | null;
@@ -88,6 +108,7 @@ export type CustomerListItem = {
   email: string | null;
   phone: string | null;
   primaryAddress: string | null;
+  projectNames: string[];
   addressCount: number;
   assetCount: number;
   openWorkOrders: number;
@@ -102,6 +123,7 @@ export type CustomerDto = {
   phone: string | null;
   notes: string | null;
   createdAt: string;
+  projects: ProjectDto[];
   addresses: AddressDto[];
 };
 
@@ -115,7 +137,12 @@ export type CustomerOption = {
 };
 
 /** Address DTO → form values. */
+/** "Water DC › Sheikhupura factory — Plot 14…": a site as pickers and lists show it. */
+export const siteLabelOf = (a: { projectName?: string | null; label: string | null; addressLine: string }) =>
+  [a.projectName, a.label ? `${a.label} — ${a.addressLine}` : a.addressLine].filter(Boolean).join(" › ");
+
 export const addressToInput = (a: AddressDto): AddressInput => ({
+  projectId: a.projectId ?? "",
   label: a.label ?? "",
   addressLine: a.addressLine,
   city: a.city ?? "",

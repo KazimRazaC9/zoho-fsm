@@ -16,22 +16,35 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { deleteUserAction, setUserActiveAction } from "@/modules/users/users.actions";
 import type { UserDto } from "@/modules/users/users.schema";
+import type { StaffRole } from "@/modules/users/users.schema";
 
-export function AddUserButton({ currency }: { currency: string }) {
+type CustomRoleOption = { id: string; name: string; baseRole: StaffRole };
+
+export function AddUserButton({ currency, customRoles }: { currency: string; customRoles: CustomRoleOption[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button onClick={() => setOpen(true)}>
         <Plus /> Add user
       </Button>
-      <UserSheet open={open} onOpenChange={setOpen} currency={currency} />
+      <UserSheet open={open} onOpenChange={setOpen} currency={currency} customRoles={customRoles} />
     </>
   );
 }
 
 type Dialog = "edit" | "reset" | "toggle" | "delete" | null;
 
-export function UserRowActions({ user, currency, isSelf }: { user: UserDto; currency: string; isSelf: boolean }) {
+export function UserRowActions({
+  user,
+  currency,
+  customRoles,
+  isSelf,
+}: {
+  user: UserDto;
+  currency: string;
+  customRoles: CustomRoleOption[];
+  isSelf: boolean;
+}) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const close = (o: boolean) => !o && setDialog(null);
 
@@ -84,7 +97,14 @@ export function UserRowActions({ user, currency, isSelf }: { user: UserDto; curr
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <UserSheet open={dialog === "edit"} onOpenChange={close} user={user} currency={currency} isSelf={isSelf} />
+      <UserSheet
+        open={dialog === "edit"}
+        onOpenChange={close}
+        user={user}
+        currency={currency}
+        customRoles={customRoles}
+        isSelf={isSelf}
+      />
       <ResetPasswordDialog user={user} open={dialog === "reset"} onOpenChange={close} />
       <ConfirmDialog
         open={dialog === "toggle"}

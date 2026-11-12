@@ -22,7 +22,11 @@ function done<T>(res: ActionResult<T>) {
 export async function saveRequestAction(id: string | null, input: RequestInput) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam.nullable(), data: requestSchema }) },
+      {
+        roles: OPS,
+        permission: id ? "requests:edit" : "requests:create",
+        input: z.object({ id: idParam.nullable(), data: requestSchema }),
+      },
       { id, data: input },
       async ({ db, user, input }) => {
         const r = input.id
@@ -36,16 +40,20 @@ export async function saveRequestAction(id: string | null, input: RequestInput) 
 
 export async function cancelRequestAction(id: string) {
   return done(
-    await runAction({ roles: OPS, input: z.object({ id: idParam }) }, { id }, async ({ db, user, input }) => {
-      await requestsService.cancel(db, user, input.id);
-    }),
+    await runAction(
+      { roles: OPS, permission: "requests:edit", input: z.object({ id: idParam }) },
+      { id },
+      async ({ db, user, input }) => {
+        await requestsService.cancel(db, user, input.id);
+      },
+    ),
   );
 }
 
 export async function convertRequestAction(id: string, input: ConvertRequestInput) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam, data: convertRequestSchema }) },
+      { roles: OPS, permission: "workOrders:create", input: z.object({ id: idParam, data: convertRequestSchema }) },
       { id, data: input },
       ({ db, user, input }) => requestsService.convert(db, user, input.id, input.data),
     ),

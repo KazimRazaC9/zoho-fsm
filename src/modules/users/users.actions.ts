@@ -20,14 +20,19 @@ import { idParam } from "@/lib/validation";
 const ADMIN = ["ADMIN"] as const;
 
 function done<T>(res: ActionResult<T>) {
-  if (res.ok) revalidatePath("/users");
+  if (res.ok) {
+    revalidatePath("/users");
+    revalidatePath("/roles");
+  }
   return res;
 }
 
 export async function createUserAction(input: CreateUserInput) {
   return done(
-    await runAction({ roles: ADMIN, input: createUserSchema }, input, ({ db, user, input }) =>
-      usersService.create(db, user, input),
+    await runAction(
+      { roles: ADMIN, permission: "users:create", input: createUserSchema },
+      input,
+      ({ db, user, input }) => usersService.create(db, user, input),
     ),
   );
 }
@@ -35,7 +40,7 @@ export async function createUserAction(input: CreateUserInput) {
 export async function updateUserAction(id: string, input: UpdateUserInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: z.object({ id: idParam, data: updateUserSchema }) },
+      { roles: ADMIN, permission: "users:edit", input: z.object({ id: idParam, data: updateUserSchema }) },
       { id, data: input },
       ({ db, user, input }) => usersService.update(db, user, input.id, input.data),
     ),
@@ -45,7 +50,7 @@ export async function updateUserAction(id: string, input: UpdateUserInput) {
 export async function updateTechnicianProfileAction(id: string, input: TechnicianProfileInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: z.object({ id: idParam, data: technicianProfileSchema }) },
+      { roles: ADMIN, permission: "users:edit", input: z.object({ id: idParam, data: technicianProfileSchema }) },
       { id, data: input },
       ({ db, user, input }) => usersService.updateTechnicianProfile(db, user, input.id, input.data),
     ),
@@ -55,7 +60,7 @@ export async function updateTechnicianProfileAction(id: string, input: Technicia
 export async function setUserActiveAction(id: string, isActive: boolean) {
   return done(
     await runAction(
-      { roles: ADMIN, input: setUserActiveSchema.extend({ id: idParam }) },
+      { roles: ADMIN, permission: "users:edit", input: setUserActiveSchema.extend({ id: idParam }) },
       { id, isActive },
       ({ db, user, input }) => usersService.setActive(db, user, input.id, input.isActive),
     ),
@@ -65,7 +70,7 @@ export async function setUserActiveAction(id: string, isActive: boolean) {
 export async function resetUserPasswordAction(id: string, password: string) {
   return done(
     await runAction(
-      { roles: ADMIN, input: resetPasswordSchema.extend({ id: idParam }) },
+      { roles: ADMIN, permission: "users:edit", input: resetPasswordSchema.extend({ id: idParam }) },
       { id, password },
       ({ db, user, input }) => usersService.resetPassword(db, user, input.id, input.password),
     ),
@@ -74,8 +79,10 @@ export async function resetUserPasswordAction(id: string, password: string) {
 
 export async function deleteUserAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: z.object({ id: idParam }) }, { id }, ({ db, user, input }) =>
-      usersService.remove(db, user, input.id),
+    await runAction(
+      { roles: ADMIN, permission: "users:delete", input: z.object({ id: idParam }) },
+      { id },
+      ({ db, user, input }) => usersService.remove(db, user, input.id),
     ),
   );
 }

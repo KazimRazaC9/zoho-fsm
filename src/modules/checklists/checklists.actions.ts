@@ -19,7 +19,11 @@ function done<T>(res: ActionResult<T>) {
 export async function saveChecklistTemplateAction(id: string | null, input: ChecklistTemplateInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: z.object({ id: idParam.nullable(), data: checklistTemplateSchema }) },
+      {
+        roles: ADMIN,
+        permission: id ? "checklists:edit" : "checklists:create",
+        input: z.object({ id: idParam.nullable(), data: checklistTemplateSchema }),
+      },
       { id, data: input },
       ({ db, user, input }) =>
         input.id
@@ -31,8 +35,10 @@ export async function saveChecklistTemplateAction(id: string | null, input: Chec
 
 export async function deleteChecklistTemplateAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: z.object({ id: idParam }) }, { id }, ({ db, input }) =>
-      checklistsService.remove(db, input.id),
+    await runAction(
+      { roles: ADMIN, permission: "checklists:delete", input: z.object({ id: idParam }) },
+      { id },
+      ({ db, input }) => checklistsService.remove(db, input.id),
     ),
   );
 }

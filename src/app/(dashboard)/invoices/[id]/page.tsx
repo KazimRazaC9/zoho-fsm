@@ -5,7 +5,7 @@ import { ChevronLeft, ExternalLink } from "lucide-react";
 import { InvoiceActions, InvoiceLines, PaymentsSection } from "./invoice-client";
 import { InvoiceStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { NotFoundError } from "@/lib/errors";
 import { formatCurrency, formatDay } from "@/lib/format";
 import { catalogService } from "@/modules/catalog";
@@ -18,6 +18,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/invoices");
   const db = dbFor(user);
 
   const invoice = await invoicesService.get(db, user, id).catch((e) => {

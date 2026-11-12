@@ -13,7 +13,13 @@ export function AppShell({ user, children }: { user: MenuUser; children: React.R
 
   return (
     <div className="flex h-svh overflow-hidden">
-      <AppSidebar role={user.role} mobileOpen={mobileOpen} onNavigate={() => setMobileOpen(false)} />
+      <AppSidebar
+        role={user.role}
+        customRoleId={user.customRoleId}
+        permissions={user.permissions}
+        mobileOpen={mobileOpen}
+        onNavigate={() => setMobileOpen(false)}
+      />
       {mobileOpen && (
         <button
           aria-label="Close menu"

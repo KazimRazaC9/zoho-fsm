@@ -24,7 +24,7 @@ function done<T>(res: ActionResult<T>) {
 export async function createInvoiceAction(workOrderId: string) {
   return done(
     await runAction(
-      { roles: ADMIN, input: z.object({ workOrderId: idParam }) },
+      { roles: ADMIN, permission: "invoices:create", input: z.object({ workOrderId: idParam }) },
       { workOrderId },
       ({ db, user, input }) => invoicesService.createFromWorkOrder(db, user, input.workOrderId),
     ),
@@ -34,7 +34,7 @@ export async function createInvoiceAction(workOrderId: string) {
 export async function updateInvoiceAction(id: string, input: InvoiceInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: inv.extend({ data: invoiceSchema }) },
+      { roles: ADMIN, permission: "invoices:edit", input: inv.extend({ data: invoiceSchema }) },
       { id, data: input },
       async ({ db, user, input }) => {
         await invoicesService.update(db, user, input.id, input.data);
@@ -45,7 +45,7 @@ export async function updateInvoiceAction(id: string, input: InvoiceInput) {
 
 export async function issueInvoiceAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: inv }, { id }, async ({ db, user, input }) => {
+    await runAction({ roles: ADMIN, permission: "invoices:edit", input: inv }, { id }, async ({ db, user, input }) => {
       await invoicesService.issue(db, user, input.id);
     }),
   );
@@ -53,16 +53,24 @@ export async function issueInvoiceAction(id: string) {
 
 export async function voidInvoiceAction(id: string) {
   return done(
-    await runAction({ roles: ADMIN, input: inv }, { id }, async ({ db, user, input }) => {
-      await invoicesService.void(db, user, input.id);
-    }),
+    await runAction(
+      { roles: ADMIN, permission: "invoices:delete", input: inv },
+      { id },
+      async ({ db, user, input }) => {
+        await invoicesService.void(db, user, input.id);
+      },
+    ),
   );
 }
 
 export async function saveInvoiceLineAction(id: string, lineId: string | null, input: LineInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: inv.extend({ lineId: idParam.nullable(), data: lineSchema }) },
+      {
+        roles: ADMIN,
+        permission: lineId ? "invoices:edit" : "invoices:create",
+        input: inv.extend({ lineId: idParam.nullable(), data: lineSchema }),
+      },
       { id, lineId, data: input },
       async ({ db, user, input }) => {
         if (input.lineId) await invoicesService.updateLine(db, input.id, input.lineId, input.data);
@@ -74,16 +82,20 @@ export async function saveInvoiceLineAction(id: string, lineId: string | null, i
 
 export async function deleteInvoiceLineAction(id: string, lineId: string) {
   return done(
-    await runAction({ roles: ADMIN, input: inv.extend({ lineId: idParam }) }, { id, lineId }, async ({ db, input }) => {
-      await invoicesService.removeLine(db, input.id, input.lineId);
-    }),
+    await runAction(
+      { roles: ADMIN, permission: "invoices:delete", input: inv.extend({ lineId: idParam }) },
+      { id, lineId },
+      async ({ db, input }) => {
+        await invoicesService.removeLine(db, input.id, input.lineId);
+      },
+    ),
   );
 }
 
 export async function recordPaymentAction(id: string, input: PaymentInput) {
   return done(
     await runAction(
-      { roles: ADMIN, input: inv.extend({ data: paymentSchema }) },
+      { roles: ADMIN, permission: "invoices:create", input: inv.extend({ data: paymentSchema }) },
       { id, data: input },
       async ({ db, user, input }) => {
         await invoicesService.addPayment(db, user, input.id, input.data);
@@ -95,7 +107,7 @@ export async function recordPaymentAction(id: string, input: PaymentInput) {
 export async function deletePaymentAction(id: string, paymentId: string) {
   return done(
     await runAction(
-      { roles: ADMIN, input: inv.extend({ paymentId: idParam }) },
+      { roles: ADMIN, permission: "invoices:delete", input: inv.extend({ paymentId: idParam }) },
       { id, paymentId },
       async ({ db, user, input }) => {
         await invoicesService.removePayment(db, user, input.id, input.paymentId);

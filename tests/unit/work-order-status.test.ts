@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nextStatuses, transitionError } from "@/modules/work-orders/work-order-status";
 
-const ok = { role: "DISPATCHER", openChecklistItems: 0, requireSignature: false, hasSignature: false };
+const ok = { role: "DISPATCHER", canQa: true, openChecklistItems: 0, requireSignature: false, hasSignature: false };
 
 describe("work order state machine", () => {
   it("allows the normal path", () => {
@@ -26,11 +26,27 @@ describe("work order state machine", () => {
     expect(transitionError("IN_PROGRESS", "ON_HOLD", { ...ok, reason: " " })).toMatch(/reason/);
   });
 
-  it("only lets an Admin reopen", () => {
-    expect(transitionError("COMPLETED", "IN_PROGRESS", { ...ok, reason: "Callback" })).toMatch(/Only an Admin/);
-    expect(transitionError("COMPLETED", "IN_PROGRESS", { ...ok, role: "ADMIN", reason: "Callback" })).toBeNull();
+  it("only lets an Admin reopen a closed or cancelled work order", () => {
+    expect(transitionError("CLOSED", "IN_PROGRESS", { ...ok, reason: "Callback" })).toMatch(/Only an Admin/);
+    expect(transitionError("CLOSED", "IN_PROGRESS", { ...ok, role: "ADMIN", reason: "Callback" })).toBeNull();
     expect(nextStatuses("CANCELLED", "DISPATCHER")).toEqual([]);
     expect(nextStatuses("CANCELLED", "ADMIN")).toEqual(["NEW"]);
+    expect(nextStatuses("CLOSED", "DISPATCHER")).toEqual([]);
+    expect(nextStatuses("CLOSED", "ADMIN")).toEqual(["IN_PROGRESS"]);
+  });
+
+  it("lets only QA verify a completed work order: close it, or send it back with a reason", () => {
+    expect(transitionError("COMPLETED", "CLOSED", ok)).toBeNull();
+    expect(transitionError("COMPLETED", "CLOSED", { ...ok, canQa: false })).toMatch(/Only QA/);
+    expect(transitionError("COMPLETED", "IN_PROGRESS", { ...ok, canQa: false, reason: "Redo" })).toMatch(/Only QA/);
+    expect(transitionError("COMPLETED", "IN_PROGRESS", ok)).toMatch(/reason/);
+    expect(transitionError("COMPLETED", "IN_PROGRESS", { ...ok, reason: "Camera 2 not recording" })).toBeNull();
+    expect(nextStatuses("COMPLETED", "DISPATCHER", false)).toEqual([]);
+    expect(nextStatuses("COMPLETED", "DISPATCHER", true)).toEqual(["CLOSED", "IN_PROGRESS"]);
+  });
+
+  it("closing is only possible from completed", () => {
+    expect(transitionError("IN_PROGRESS", "CLOSED", ok)).toMatch(/cannot be moved to closed/);
   });
 
   it("blocks completion until the checklist is done and a required signature exists", () => {

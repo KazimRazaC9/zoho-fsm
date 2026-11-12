@@ -3,10 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarClock, ChevronLeft, ExternalLink, Inbox, MapPin, Phone, Wrench } from "lucide-react";
 import { AttachmentsSection, ChecklistSection, LinesSection, NotesSection, StatusActions } from "./work-order-client";
+import { EvidencePanel } from "./evidence-panel";
 import { InvoiceLink } from "./invoice-link";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
+import { canQa } from "@/lib/permissions";
 import { NotFoundError } from "@/lib/errors";
 import { WORK_ORDER_STATUS_LABEL } from "@/lib/statuses";
 import { formatIn } from "@/lib/tz";
@@ -25,6 +27,7 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/work-orders");
   const db = dbFor(user);
 
   const wo = await workOrdersService.get(db, user, id).catch((e) => {
@@ -74,11 +77,12 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
           <div className="flex flex-wrap items-center gap-2">
             <InvoiceLink
               workOrderId={wo.id}
-              completed={wo.status === "COMPLETED"}
+              completed={wo.status === "CLOSED"}
+              awaitingQa={wo.status === "COMPLETED"}
               isAdmin={user.role === "ADMIN"}
               invoice={invoice}
             />
-            <StatusActions wo={wo} role={user.role} customers={customers} />
+            <StatusActions wo={wo} role={user.role} canQa={canQa(user)} customers={customers} />
           </div>
         </div>
 
@@ -132,6 +136,12 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
                 <span className="text-muted-foreground text-xs">Completed {when(wo.completedAt)}</span>
               )}
             </Fact>
+            {(wo.zohoTicket || wo.purchaseOrder) && (
+              <Fact label="References">
+                {wo.zohoTicket && <span>Zoho ticket: {wo.zohoTicket}</span>}
+                {wo.purchaseOrder && <span>PO: {wo.purchaseOrder}</span>}
+              </Fact>
+            )}
             {(wo.description || wo.request) && (
               <div className="space-y-2 sm:col-span-2 lg:col-span-4">
                 {wo.request && (
@@ -156,6 +166,7 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
         <div className="min-w-0 space-y-4">
           <LinesSection {...ctx} items={items} />
           <ChecklistSection {...ctx} templates={templates} />
+          <EvidencePanel wo={wo} userId={user.id} />
           <AttachmentsSection {...ctx} />
         </div>
         <div className="space-y-4">

@@ -1,7 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
-import { signIn, signOut } from "@/auth";
+import { signIn } from "@/auth";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { authService } from "./auth.service";
@@ -54,8 +54,4 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     }
     throw err; // NEXT_REDIRECT on success
   }
-}
-
-export async function logoutAction() {
-  await signOut({ redirectTo: "/login" });
 }

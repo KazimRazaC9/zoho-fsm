@@ -19,9 +19,11 @@ export const assetSelect = {
   status: true,
   createdAt: true,
   customer: { select: { name: true } },
-  address: { select: { label: true, addressLine: true, deletedAt: true } },
+  address: {
+    select: { label: true, addressLine: true, deletedAt: true, project: { select: { name: true, deletedAt: true } } },
+  },
   workOrders: {
-    where: { ...live, status: "COMPLETED" },
+    where: { ...live, status: { in: ["COMPLETED", "CLOSED"] } },
     orderBy: { completedAt: "desc" },
     take: 1,
     select: { completedAt: true },

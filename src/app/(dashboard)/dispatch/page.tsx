@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { DispatchBoard } from "./dispatch-board";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { boardQuerySchema, schedulingService } from "@/modules/scheduling";
 
 export const metadata: Metadata = { title: "Dispatch board" };
@@ -11,6 +11,7 @@ export default async function DispatchPage({ searchParams }: { searchParams: Sea
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/dispatch");
   const { date } = boardQuerySchema.parse({ date: typeof sp.date === "string" ? sp.date : undefined });
   const board = await schedulingService.board(dbFor(user), user, date);
 

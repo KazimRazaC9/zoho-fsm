@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CalendarCheck, ChevronRight, MapPin } from "lucide-react";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePermission, requireRole, requireUser } from "@/lib/auth";
 import { fieldService, type FieldJob } from "@/modules/field";
 
 export const metadata: Metadata = { title: "My jobs" };
@@ -52,9 +52,10 @@ function JobCard({ job }: { job: FieldJob }) {
 export default async function MyJobsPage() {
   const user = await requireUser();
   requireRole(user, ["TECHNICIAN"]);
+  requirePermission(user, "field:view");
   const { today, jobs } = await fieldService.myJobs(dbFor(user), user);
 
-  const finished = (j: FieldJob) => j.status === "COMPLETED" || j.status === "CANCELLED";
+  const finished = (j: FieldJob) => j.status === "COMPLETED" || j.status === "CLOSED" || j.status === "CANCELLED";
   const open = jobs.filter((j) => !finished(j));
   const carried = open.filter((j) => j.day < today);
   const upcoming = open.filter((j) => j.day >= today);
@@ -103,7 +104,7 @@ export default async function MyJobsPage() {
 
       {done.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-muted-foreground text-sm font-semibold">Recently finished</h2>
+          <h2 className="text-muted-foreground text-sm font-semibold">History</h2>
           {done.map((j) => (
             <JobCard key={j.workOrderId} job={j} />
           ))}

@@ -57,6 +57,7 @@ const blank: RequestInput = {
   priority: "MEDIUM",
   source: "PHONE",
   category: "",
+  zohoTicket: "",
   contactName: "",
   contactPhone: "",
   contactEmail: "",
@@ -118,6 +119,9 @@ function RequestSheet({
               {...register("title")}
               aria-invalid={!!e.title}
             />
+          </Field>
+          <Field label="Zoho ticket" htmlFor="rq-zoho" hint="Optional" error={e.zohoTicket?.message}>
+            <Input id="rq-zoho" type="text" placeholder="Ticket number or link" {...register("zohoTicket")} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Category" htmlFor="rq-category" hint="Optional">

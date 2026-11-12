@@ -86,6 +86,7 @@ export type RequestDto = {
   priority: Priority;
   source: string;
   category: string | null;
+  zohoTicket: string | null;
   contactName: string | null;
   contactPhone: string | null;
   contactEmail: string | null;
@@ -106,6 +107,7 @@ export const requestToInput = (r: RequestDto): RequestInput => ({
   priority: r.priority,
   source: (REQUEST_SOURCES as readonly string[]).includes(r.source) ? (r.source as RequestSource) : "PHONE",
   category: (REQUEST_CATEGORIES as readonly string[]).includes(r.category ?? "") ? (r.category as RequestCategory) : "",
+  zohoTicket: r.zohoTicket ?? "",
   contactName: r.contactName ?? "",
   contactPhone: r.contactPhone ?? "",
   contactEmail: r.contactEmail ?? "",

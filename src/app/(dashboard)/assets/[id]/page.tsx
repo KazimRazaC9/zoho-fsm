@@ -6,13 +6,13 @@ import { AssetHeaderActions } from "../assets-client";
 import { AssetStatusBadge, WarrantyBadge } from "@/components/domain/badges";
 import { WorkHistoryTable } from "@/components/domain/work-history-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { NotFoundError } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
 import { formatIn } from "@/lib/tz";
 import { assetsService } from "@/modules/assets";
 import { companiesService } from "@/modules/companies";
-import { customersService, type CustomerOption } from "@/modules/customers";
+import { customersService, siteLabelOf, type CustomerOption } from "@/modules/customers";
 
 export const metadata: Metadata = { title: "Asset" };
 
@@ -20,6 +20,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/assets");
   const db = dbFor(user);
   const { timeZone } = await companiesService.getSettings(db, user);
 
@@ -38,7 +39,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
       name: customer.name,
       addresses: customer.addresses.map((a) => ({
         id: a.id,
-        label: a.label ? `${a.label} — ${a.addressLine}` : a.addressLine,
+        label: siteLabelOf(a),
       })),
     },
   ];

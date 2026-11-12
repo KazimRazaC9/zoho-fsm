@@ -27,11 +27,14 @@ import {
   type UserDto,
 } from "@/modules/users/users.schema";
 
+type CustomRoleOption = { id: string; name: string; baseRole: StaffRole };
+
 type FormValues = {
   fullName: string;
   email: string;
   phone: string;
   role: StaffRole;
+  customRoleId: string | null;
   password: string;
   technicianProfile: TechnicianProfileInput;
 };
@@ -44,6 +47,7 @@ const defaults = (user?: UserDto): FormValues => ({
   email: user?.email ?? "",
   phone: user?.phone ?? "",
   role: user?.role ?? "TECHNICIAN",
+  customRoleId: user?.customRoleId ?? null,
   password: "",
   technicianProfile: user?.technicianProfile ?? DEFAULT_TECHNICIAN_PROFILE,
 });
@@ -54,12 +58,14 @@ export function UserSheet({
   onOpenChange,
   user,
   currency,
+  customRoles,
   isSelf,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user?: UserDto;
   currency: string;
+  customRoles: CustomRoleOption[];
   isSelf?: boolean;
 }) {
   const editing = !!user;
@@ -70,6 +76,7 @@ export function UserSheet({
   });
   const { register, control, handleSubmit, setValue, setError, reset, watch, formState } = form;
   const role = watch("role");
+  const customRoleId = watch("customRoleId");
 
   useEffect(() => {
     if (open) {
@@ -87,6 +94,7 @@ export function UserSheet({
         email: v.email,
         phone: v.phone,
         role: v.role,
+        customRoleId: v.customRoleId,
         password: v.password,
         technicianProfile: v.role === "TECHNICIAN" ? profile : undefined,
       });
@@ -95,7 +103,13 @@ export function UserSheet({
       return;
     }
 
-    const res = await updateUserAction(user.id, { fullName: v.fullName, email: v.email, phone: v.phone, role: v.role });
+    const res = await updateUserAction(user.id, {
+      fullName: v.fullName,
+      email: v.email,
+      phone: v.phone,
+      role: v.role,
+      customRoleId: v.customRoleId,
+    });
     if (!handleResult(res, setError)) return;
     if (v.role === "TECHNICIAN") {
       const p = await updateTechnicianProfileAction(user.id, profile);
@@ -137,14 +151,33 @@ export function UserSheet({
               control={control}
               name="role"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isSelf}>
+                <Select
+                  value={customRoleId ? `custom:${customRoleId}` : `builtin:${field.value}`}
+                  onValueChange={(value) => {
+                    if (value.startsWith("custom:")) {
+                      const selected = customRoles.find((item) => item.id === value.slice("custom:".length));
+                      if (!selected) return;
+                      setValue("customRoleId", selected.id, { shouldValidate: true });
+                      setValue("role", selected.baseRole, { shouldValidate: true });
+                    } else {
+                      setValue("customRoleId", null, { shouldValidate: true });
+                      field.onChange(value.slice("builtin:".length));
+                    }
+                  }}
+                  disabled={isSelf}
+                >
                   <SelectTrigger className="w-full" aria-label="Role">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {STAFF_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>
+                      <SelectItem key={r} value={`builtin:${r}`}>
                         {ROLE_LABEL[r]}
+                      </SelectItem>
+                    ))}
+                    {customRoles.map((customRole) => (
+                      <SelectItem key={customRole.id} value={`custom:${customRole.id}`}>
+                        {customRole.name} · {ROLE_LABEL[customRole.baseRole]}
                       </SelectItem>
                     ))}
                   </SelectContent>

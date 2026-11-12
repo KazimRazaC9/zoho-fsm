@@ -32,7 +32,11 @@ function done<T>(res: ActionResult<T>) {
 export async function saveEstimateAction(id: string | null, input: EstimateInput) {
   return done(
     await runAction(
-      { roles: OPS, input: z.object({ id: idParam.nullable(), data: estimateSchema }) },
+      {
+        roles: OPS,
+        permission: id ? "estimates:edit" : "estimates:create",
+        input: z.object({ id: idParam.nullable(), data: estimateSchema }),
+      },
       { id, data: input },
       async ({ db, user, input }) => {
         const e = input.id
@@ -46,7 +50,7 @@ export async function saveEstimateAction(id: string | null, input: EstimateInput
 
 export async function deleteEstimateAction(id: string) {
   return done(
-    await runAction({ roles: OPS, input: est }, { id }, async ({ db, input }) => {
+    await runAction({ roles: OPS, permission: "estimates:delete", input: est }, { id }, async ({ db, input }) => {
       await estimatesService.remove(db, input.id);
     }),
   );
@@ -55,7 +59,7 @@ export async function deleteEstimateAction(id: string) {
 export async function changeEstimateStatusAction(id: string, input: EstimateStatusInput) {
   return done(
     await runAction(
-      { roles: OPS, input: est.extend({ data: estimateStatusSchema }) },
+      { roles: OPS, permission: "estimates:edit", input: est.extend({ data: estimateStatusSchema }) },
       { id, data: input },
       async ({ db, user, input }) => {
         await estimatesService.changeStatus(db, user, input.id, input.data.status);
@@ -67,7 +71,7 @@ export async function changeEstimateStatusAction(id: string, input: EstimateStat
 export async function convertEstimateAction(id: string, input: ConvertEstimateInput) {
   return done(
     await runAction(
-      { roles: OPS, input: est.extend({ data: convertEstimateSchema }) },
+      { roles: OPS, permission: "workOrders:create", input: est.extend({ data: convertEstimateSchema }) },
       { id, data: input },
       ({ db, user, input }) => estimatesService.convert(db, user, input.id, input.data),
     ),
@@ -78,7 +82,11 @@ export async function convertEstimateAction(id: string, input: ConvertEstimateIn
 export async function saveEstimateLineAction(id: string, lineId: string | null, input: LineInput) {
   return done(
     await runAction(
-      { roles: OPS, input: est.extend({ lineId: idParam.nullable(), data: lineSchema }) },
+      {
+        roles: OPS,
+        permission: lineId ? "estimates:edit" : "estimates:create",
+        input: est.extend({ lineId: idParam.nullable(), data: lineSchema }),
+      },
       { id, lineId, data: input },
       async ({ db, user, input }) => {
         if (input.lineId) await estimatesService.updateLine(db, input.id, input.lineId, input.data);
@@ -90,8 +98,12 @@ export async function saveEstimateLineAction(id: string, lineId: string | null, 
 
 export async function deleteEstimateLineAction(id: string, lineId: string) {
   return done(
-    await runAction({ roles: OPS, input: est.extend({ lineId: idParam }) }, { id, lineId }, async ({ db, input }) => {
-      await estimatesService.removeLine(db, input.id, input.lineId);
-    }),
+    await runAction(
+      { roles: OPS, permission: "estimates:delete", input: est.extend({ lineId: idParam }) },
+      { id, lineId },
+      async ({ db, input }) => {
+        await estimatesService.removeLine(db, input.id, input.lineId);
+      },
+    ),
   );
 }

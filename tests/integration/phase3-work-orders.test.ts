@@ -93,6 +93,7 @@ describe("Phase 3 — request to work order", () => {
       priority: "HIGH",
       source: "PHONE",
       category: "REPAIR",
+      zohoTicket: "ZD-48213",
       contactName: "Fleet desk",
       contactPhone: "0300-1234567",
       contactEmail: "desk@example.com",
@@ -137,6 +138,46 @@ describe("Phase 3 — request to work order", () => {
     expect(wo.priority).toBe("HIGH");
     expect(wo.address?.id).toBe(addressId);
     expect(wo.checklist.map((c) => c.text)).toEqual(["Mount device", "Test video"]);
+    // The Zoho ticket travels from the request to its work order; the PO is added on the work order.
+    expect(req.zohoTicket).toBe("ZD-48213");
+    expect(wo.zohoTicket).toBe("ZD-48213");
+    expect(wo.purchaseOrder).toBeNull();
+    const withPo = await workOrdersService.update(db, dispatcher, id, {
+      customerId,
+      addressId,
+      assetId: "",
+      title: wo.title,
+      description: wo.description ?? "",
+      zohoTicket: " ZD-48213 ",
+      purchaseOrder: "PO-7781",
+      priority: wo.priority,
+      dueDate: wo.dueDateLocal,
+    });
+    expect(withPo).toMatchObject({ zohoTicket: "ZD-48213", purchaseOrder: "PO-7781" });
+    const cleared = await workOrdersService.update(db, dispatcher, id, {
+      customerId,
+      addressId,
+      assetId: "",
+      title: wo.title,
+      description: wo.description ?? "",
+      zohoTicket: "",
+      purchaseOrder: "",
+      priority: wo.priority,
+      dueDate: wo.dueDateLocal,
+    });
+    expect(cleared).toMatchObject({ zohoTicket: null, purchaseOrder: null });
+    // Put the reference back so the later steps keep a realistic work order.
+    await workOrdersService.update(db, dispatcher, id, {
+      customerId,
+      addressId,
+      assetId: "",
+      title: wo.title,
+      description: wo.description ?? "",
+      zohoTicket: "ZD-48213",
+      purchaseOrder: "",
+      priority: wo.priority,
+      dueDate: wo.dueDateLocal,
+    });
     expect(wo.lines).toHaveLength(2);
     expect(wo.totals).toEqual({ subTotal: 5001, tax: 800.16, total: 5801.16 });
     expect(wo.timeline).toHaveLength(1);
@@ -178,7 +219,7 @@ describe("Phase 3 — request to work order", () => {
     ]);
   });
 
-  it("locks a completed work order; only an Admin can reopen it", async () => {
+  it("locks a completed work order; QA closes it and only an Admin can reopen it", async () => {
     const id = woIds[0];
     await expect(
       workOrdersService.addLine(db, dispatcher, id, {
@@ -189,6 +230,10 @@ describe("Phase 3 — request to work order", () => {
         taxPercent: 0,
       }),
     ).rejects.toBeInstanceOf(ConflictError);
+    // A dispatcher counts as QA by default: verify and close.
+    const closed = await workOrdersService.changeStatus(db, dispatcher, id, { status: "CLOSED", reason: "" });
+    expect(closed.status).toBe("CLOSED");
+    expect(closed.completedAt).not.toBeNull();
     await expect(
       workOrdersService.changeStatus(db, dispatcher, id, { status: "IN_PROGRESS", reason: "Callback" }),
     ).rejects.toThrow(/Only an Admin/);
@@ -199,7 +244,7 @@ describe("Phase 3 — request to work order", () => {
     });
     expect(reopened.status).toBe("IN_PROGRESS");
     expect(reopened.completedAt).toBeNull();
-    expect(reopened.timeline.at(-1)).toMatchObject({ fromStatus: "COMPLETED", reason: "Callback" });
+    expect(reopened.timeline.at(-1)).toMatchObject({ fromStatus: "CLOSED", reason: "Callback" });
   });
 
   it("stores attachments, refuses unsafe types, and hides them from other companies", async () => {

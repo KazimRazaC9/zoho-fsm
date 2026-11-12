@@ -16,6 +16,9 @@ export const ALLOWED_TYPES: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "image/heic": ".heic",
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/webm": ".webm",
   "application/pdf": ".pdf",
   "text/plain": ".txt",
   "text/csv": ".csv",
@@ -24,7 +27,17 @@ export const ALLOWED_TYPES: Record<string, string> = {
 };
 
 /** Types a browser may show inline (no HTML/SVG/script-capable types). */
-export const INLINE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+export const INLINE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+]);
+
+export const isVideoType = (type: string) => type.startsWith("video/");
 
 const root = () => path.resolve(env.UPLOAD_DIR);
 
@@ -49,10 +62,13 @@ export async function saveFile(
 ): Promise<{ key: string; contentType: string; size: number }> {
   const ext = ALLOWED_TYPES[file.type];
   if (!ext)
-    throw new BadRequestError("This file type is not allowed. Use JPG, PNG, WEBP, HEIC, PDF, TXT, CSV, DOCX or XLSX.");
-  const max = env.MAX_UPLOAD_MB * 1024 * 1024;
+    throw new BadRequestError(
+      "This file type is not allowed. Use JPG, PNG, WEBP, HEIC, MP4, MOV, WEBM, PDF, TXT, CSV, DOCX or XLSX.",
+    );
+  const maxMb = isVideoType(file.type) ? env.MAX_VIDEO_MB : env.MAX_UPLOAD_MB;
   if (file.size === 0) throw new BadRequestError("The file is empty.");
-  if (file.size > max) throw new BadRequestError(`Files can be at most ${env.MAX_UPLOAD_MB} MB.`);
+  if (file.size > maxMb * 1024 * 1024)
+    throw new BadRequestError(`${isVideoType(file.type) ? "Videos" : "Files"} can be at most ${maxMb} MB.`);
 
   const now = new Date();
   const key = [

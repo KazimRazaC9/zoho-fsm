@@ -21,6 +21,7 @@ const select = {
   priority: true,
   source: true,
   category: true,
+  zohoTicket: true,
   contactName: true,
   contactPhone: true,
   contactEmail: true,
@@ -57,6 +58,7 @@ const toDto = (r: Row, timeZone: string): RequestDto => ({
   priority: r.priority,
   source: r.source,
   category: r.category,
+  zohoTicket: r.zohoTicket,
   contactName: r.contactName,
   contactPhone: r.contactPhone,
   contactEmail: r.contactEmail,
@@ -104,6 +106,7 @@ const data = (i: RequestInput, timeZone: string) => ({
   priority: i.priority,
   source: i.source,
   category: i.category || null,
+  zohoTicket: nullIfEmpty(i.zohoTicket),
   contactName: nullIfEmpty(i.contactName),
   contactPhone: nullIfEmpty(i.contactPhone),
   contactEmail: nullIfEmpty(i.contactEmail),
@@ -122,7 +125,7 @@ export const requestsService = {
       ...(q.status === "open" ? { status: { in: [...OPEN] } } : q.status === "all" ? {} : { status: q.status }),
       ...(q.source ? { source: q.source } : {}),
       ...(q.priority ? { priority: q.priority } : {}),
-      ...(has ? { OR: [{ number: has }, { title: has }, { customer: { name: has } }] } : {}),
+      ...(has ? { OR: [{ number: has }, { title: has }, { zohoTicket: has }, { customer: { name: has } }] } : {}),
     };
     const tz = await zoneOf(db, companyOf(actor));
     const skip = (q.page - 1) * q.pageSize;
@@ -210,6 +213,8 @@ export const requestsService = {
           assetId: r.assetId ?? "",
           title: r.title,
           description: r.description ?? "",
+          zohoTicket: r.zohoTicket ?? "",
+          purchaseOrder: "",
           priority: r.priority,
           dueDate: input.dueDate,
           checklistTemplateId: input.checklistTemplateId,

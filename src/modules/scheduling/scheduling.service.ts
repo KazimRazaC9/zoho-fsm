@@ -199,7 +199,7 @@ export const schedulingService = {
       throw new ConflictError(
         wo.status === "IN_PROGRESS"
           ? `${wo.number} is already in progress and cannot be rescheduled.`
-          : `${wo.number} is ${wo.status === "COMPLETED" ? "completed" : "cancelled"}. Reopen it first.`,
+          : `${wo.number} is ${wo.status === "CANCELLED" ? "cancelled" : wo.status === "CLOSED" ? "closed" : "completed"}. Reopen it first.`,
       );
     }
 
@@ -289,6 +289,7 @@ export async function syncAppointments(db: AppDb, workOrderId: string, to: WorkO
     DISPATCHED: "EN_ROUTE",
     IN_PROGRESS: "ON_SITE",
     COMPLETED: "COMPLETED",
+    CLOSED: "COMPLETED",
     CANCELLED: "CANCELLED",
     NEW: "CANCELLED",
   };

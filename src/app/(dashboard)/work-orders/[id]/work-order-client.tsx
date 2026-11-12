@@ -59,10 +59,12 @@ const fail = (res: { ok: boolean; error?: string }) => {
 export function StatusActions({
   wo,
   role,
+  canQa,
   customers,
 }: {
   wo: WorkOrderDetail;
   role: string;
+  canQa: boolean;
   customers: CustomerOption[];
 }) {
   const router = useRouter();
@@ -70,8 +72,8 @@ export function StatusActions({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
-  const moves = nextStatuses(wo.status, role);
-  const primary: WorkOrderStatus[] = ["SCHEDULED", "DISPATCHED", "IN_PROGRESS", "COMPLETED"];
+  const moves = nextStatuses(wo.status, role, canQa);
+  const primary: WorkOrderStatus[] = ["SCHEDULED", "DISPATCHED", "IN_PROGRESS", "COMPLETED", "CLOSED"];
 
   const move = async (to: WorkOrderStatus, why = "") => {
     setBusy(true);
@@ -96,7 +98,11 @@ export function StatusActions({
         <Button
           key={to}
           size="sm"
-          variant={primary.includes(to) && !isClosed(wo.status) ? "default" : "outline"}
+          variant={
+            primary.includes(to) && (!isClosed(wo.status) || (wo.status === "COMPLETED" && to === "CLOSED"))
+              ? "default"
+              : "outline"
+          }
           onClick={() => click(to)}
           disabled={busy}
           className={to === "CANCELLED" ? "text-destructive" : undefined}
@@ -164,7 +170,12 @@ function ClosedHint({ wo }: { wo: WorkOrderDetail }) {
   if (!isClosed(wo.status)) return null;
   return (
     <p className="text-muted-foreground flex items-center gap-1 text-xs">
-      <Lock className="size-3" /> {wo.status === "COMPLETED" ? "Completed" : "Cancelled"} — reopen to change.
+      <Lock className="size-3" />{" "}
+      {wo.status === "COMPLETED"
+        ? "Completed by the technician — waiting for QA to verify and close."
+        : wo.status === "CLOSED"
+          ? "Closed — an Admin can reopen it."
+          : "Cancelled — an Admin can reopen it."}
     </p>
   );
 }

@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { z, ZodError } from "zod";
-import { dbFor, requireRole, requireUser, type CurrentUser } from "./auth";
+import { dbFor, requirePermission, requireRole, requireUser, type CurrentUser } from "./auth";
 import type { AppDb } from "./db";
 import { AppError, type FieldErrors } from "./errors";
 import { logger } from "./logger";
 import { clientIp, rateLimit } from "./rate-limit";
 import type { AppRole } from "./roles";
+import { permissionForApi } from "./permissions";
 
 /** Standard response envelope: { success, message, data, errors }. */
 export type ApiEnvelope<T> = { success: boolean; message?: string; data?: T; errors?: FieldErrors };
@@ -54,6 +55,7 @@ export function route<TBody = undefined, TQuery = undefined>(
   return wrap<TBody, TQuery>(opts, async (base) => {
     const user = await requireUser(base.req.headers);
     if (opts.roles) requireRole(user, opts.roles);
+    requirePermission(user, permissionForApi(base.req.nextUrl.pathname, base.req.method));
     return handler({ ...base, user, db: dbFor(user) });
   });
 }

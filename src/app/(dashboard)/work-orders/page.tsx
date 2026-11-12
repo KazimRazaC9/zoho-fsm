@@ -7,7 +7,7 @@ import { UrlSelect } from "@/components/data-table/url-select";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { PRIORITY_LABEL, WORK_ORDER_STATUS_LABEL } from "@/lib/statuses";
 import { formatIn } from "@/lib/tz";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: S
   const sp = await searchParams;
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/work-orders");
   const db = dbFor(user);
   const q = workOrderListQuerySchema.parse(sp);
   const [result, company, customers, templates] = await Promise.all([
@@ -44,7 +45,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: S
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <SearchInput placeholder="Search number, title, customer, asset" />
+        <SearchInput placeholder="Search number, title, customer, asset, Zoho ticket, PO" />
         <UrlSelect
           param="status"
           label="Status"
@@ -104,6 +105,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: S
                   <p className="text-xs">
                     <PriorityText priority={w.priority} />
                     {w.assetName && <span className="text-muted-foreground"> · {w.assetName}</span>}
+                    {w.zohoTicket && <span className="text-muted-foreground"> · Zoho {w.zohoTicket}</span>}
                   </p>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">

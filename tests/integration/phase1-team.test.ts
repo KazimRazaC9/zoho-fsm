@@ -23,7 +23,17 @@ const createdCompanyIds: string[] = [];
 
 beforeAll(async () => {
   const a = await owner.user.findFirstOrThrow({ where: { email: "admin@demo.local" } });
-  admin = { id: a.id, role: "ADMIN", companyId: a.companyId, fullName: a.fullName, email: a.email, via: "session" };
+  admin = {
+    id: a.id,
+    role: "ADMIN",
+    customRoleId: null,
+    customRoleName: null,
+    permissions: [],
+    companyId: a.companyId,
+    fullName: a.fullName,
+    email: a.email,
+    via: "session",
+  };
   db = createDb(tenantContext(a.companyId!, a.id));
 });
 
@@ -166,6 +176,9 @@ describe("Phase 1 — company team", () => {
     const acmeActor: CurrentUser = {
       id: acmeAdmin.id,
       role: "ADMIN",
+      customRoleId: null,
+      customRoleName: null,
+      permissions: [],
       companyId: acme.id,
       fullName: "",
       email: "",
@@ -217,6 +230,9 @@ describe("Phase 1 — company team", () => {
     const saActor: CurrentUser = {
       id: sa.id,
       role: "SUPER_ADMIN",
+      customRoleId: null,
+      customRoleName: null,
+      permissions: [],
       companyId: null,
       fullName: sa.fullName,
       email: sa.email,

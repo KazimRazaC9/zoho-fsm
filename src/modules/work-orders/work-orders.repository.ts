@@ -11,6 +11,7 @@ export const listSelect = {
   status: true,
   priority: true,
   customerId: true,
+  zohoTicket: true,
   dueDate: true,
   createdAt: true,
   customer: { select: { name: true, phone: true } },
@@ -33,9 +34,15 @@ export type ListRow = Prisma.WorkOrderGetPayload<{ select: typeof listSelect }>;
 export const detailSelect = {
   ...listSelect,
   description: true,
+  purchaseOrder: true,
   completedAt: true,
   assetId: true,
   request: { select: { id: true, number: true } },
+  issues: {
+    where: live,
+    orderBy: { createdAt: "asc" },
+    select: { id: true, title: true, details: true, status: true, createdById: true, createdAt: true },
+  },
   lines: {
     where: live,
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -106,6 +113,8 @@ export const workOrdersRepository = {
         contentType: true,
         sizeBytes: true,
         kind: true,
+        phase: true,
+        issueId: true,
         createdAt: true,
         createdById: true,
       },

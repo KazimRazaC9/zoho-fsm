@@ -59,7 +59,14 @@ function toDto(a: AssetRow, today: string): AssetDto {
     customerId: a.customerId,
     customerName: a.customer.name,
     addressId: site ? a.addressId : null,
-    siteLabel: site ? (site.label ? `${site.label} — ${site.addressLine}` : site.addressLine) : null,
+    siteLabel: site
+      ? [
+          site.project && !site.project.deletedAt ? site.project.name : null,
+          site.label ? `${site.label} — ${site.addressLine}` : site.addressLine,
+        ]
+          .filter(Boolean)
+          .join(" › ")
+      : null,
     name: a.name,
     category: a.category,
     brand: a.brand,
@@ -163,6 +170,20 @@ export const assetsService = {
     await assertOwnership(db, input);
     await assetsRepository.update(db, id, assetData(input));
     return toDto(await getOrThrow(db, id), todayIn(timeZone));
+  },
+
+  /**
+   * Re-assigns an asset to another site of the SAME customer (or to no site). Its project follows the
+   * site, so this is also how an asset moves between projects.
+   */
+  async moveToSite(db: AppDb, id: string, addressId: string | null): Promise<void> {
+    const a = await getOrThrow(db, id);
+    if (addressId && !(await assetsRepository.addressBelongsTo(db, addressId, a.customerId))) {
+      throw new BadRequestError("That site does not belong to this customer.", {
+        addressId: ["Choose one of this customer's sites."],
+      });
+    }
+    await assetsRepository.update(db, id, { addressId });
   },
 
   async remove(db: AppDb, id: string): Promise<void> {

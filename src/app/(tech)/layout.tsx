@@ -6,7 +6,6 @@ import { LocationSharing, PwaRegister } from "./field-runtime";
 import { auth } from "@/auth";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { getCurrentUser } from "@/lib/auth";
-import { logoutAction } from "@/modules/auth/auth.actions";
 
 export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
@@ -19,7 +18,7 @@ export default async function TechLayout({ children }: { children: React.ReactNo
   const session = await auth();
   if (!session?.user) redirect("/login");
   // Live account check: a deactivated technician is signed out right away.
-  if (!(await getCurrentUser())) redirect("/api/session/end");
+  if (!(await getCurrentUser())) redirect("/api/session/end?reason=inactive");
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -47,11 +46,9 @@ export default async function TechLayout({ children }: { children: React.ReactNo
         <Link href="/account" className="flex flex-col items-center gap-1 py-3 text-xs">
           <KeyRound className="size-5" /> Account
         </Link>
-        <form action={logoutAction} className="contents">
-          <button type="submit" className="flex flex-col items-center gap-1 py-3 text-xs">
-            <LogOut className="size-5" /> Sign out
-          </button>
-        </form>
+        <Link href="/api/session/end" className="flex flex-col items-center gap-1 py-3 text-xs">
+          <LogOut className="size-5" /> Sign out
+        </Link>
       </nav>
     </div>
   );

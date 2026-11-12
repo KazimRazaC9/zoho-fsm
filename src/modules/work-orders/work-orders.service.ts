@@ -1,11 +1,16 @@
 import "server-only";
 import { Prisma, type WorkOrderStatus } from "@prisma/client";
-import { transitionError, isClosed } from "./work-order-status";
+import { evidenceError, mediaKindOf, type EvidencePhaseValue } from "./evidence";
+import { isClosed, isQaMove, STATUS_TEXT, transitionError } from "./work-order-status";
 import { workOrdersRepository, type DetailRow, type ListRow } from "./work-orders.repository";
 import type {
   ChangeStatusInput,
   CreateWorkOrderInput,
+  EvidenceDto,
+  IssueDto,
+  IssueInput,
   LineInput,
+  MediaDto,
   NoteInput,
   WorkOrderDetail,
   WorkOrderInput,
@@ -15,6 +20,7 @@ import type {
 import type { CurrentUser } from "@/lib/auth";
 import type { AppDb } from "@/lib/db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
+import { canQa, hasPermission } from "@/lib/permissions";
 import { computeLine, computeTotals } from "@/lib/money";
 import { nextNumber } from "@/lib/numbers";
 import { paged, type PagedResult } from "@/lib/pagination";
@@ -48,6 +54,7 @@ function toListItem(w: ListRow, now = new Date()): WorkOrderListItem {
     customerName: w.customer.name,
     siteLabel: siteText(w.address),
     assetName: w.asset?.name ?? null,
+    zohoTicket: w.zohoTicket,
     dueDate: w.dueDate?.toISOString() ?? null,
     overdue: !!w.dueDate && w.dueDate < now && !isClosed(w.status),
     createdAt: w.createdAt.toISOString(),
@@ -71,7 +78,9 @@ async function openOrThrow(db: AppDb, id: string) {
   const w = await statusOrThrow(db, id);
   if (isClosed(w.status)) {
     throw new ConflictError(
-      `${w.number} is ${w.status === "COMPLETED" ? "completed" : "cancelled"}. Reopen it to make changes.`,
+      w.status === "COMPLETED"
+        ? `${w.number} is completed and waiting for QA. Send it back for rework to make changes.`
+        : `${w.number} is ${STATUS_TEXT[w.status]}. Reopen it to make changes.`,
     );
   }
   return w;
@@ -97,6 +106,8 @@ const detailsData = (i: WorkOrderInput, timeZone: string) => ({
   assetId: i.assetId || null,
   title: i.title,
   description: nullIfEmpty(i.description),
+  zohoTicket: nullIfEmpty(i.zohoTicket),
+  purchaseOrder: nullIfEmpty(i.purchaseOrder),
   priority: i.priority,
   dueDate: i.dueDate ? fromCompanyTime(i.dueDate, timeZone) : null,
 });
@@ -113,6 +124,30 @@ const lineData = (i: LineInput) => {
   };
 };
 
+type AttachmentRow = Awaited<ReturnType<typeof workOrdersRepository.attachments>>[number];
+
+function toMedia(f: AttachmentRow, names: Map<string, string>): MediaDto {
+  return {
+    id: f.id,
+    fileName: f.fileName,
+    kind: f.kind === "VIDEO" ? "VIDEO" : "PHOTO",
+    contentType: f.contentType,
+    createdAt: f.createdAt.toISOString(),
+    author: f.createdById ? (names.get(f.createdById) ?? null) : null,
+    authorId: f.createdById,
+  };
+}
+
+function toEvidence(files: AttachmentRow[], names: Map<string, string>, issueId: string | null): EvidenceDto {
+  const mine = files.filter((f) => f.phase !== null && f.issueId === issueId);
+  const phase = (p: EvidencePhaseValue) =>
+    mine
+      .filter((f) => f.phase === p)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((f) => toMedia(f, names));
+  return { before: phase("BEFORE"), after: phase("AFTER") };
+}
+
 async function toDetail(
   db: AppDb,
   w: DetailRow,
@@ -121,6 +156,7 @@ async function toDetail(
 ): Promise<WorkOrderDetail> {
   const files = await workOrdersRepository.attachments(db, w.id);
   const names = await workOrdersRepository.userNames(db, [
+    ...w.issues.map((x) => x.createdById ?? ""),
     ...w.notes.map((x) => x.createdById ?? ""),
     ...files.map((f) => f.createdById ?? ""),
   ]);
@@ -129,6 +165,7 @@ async function toDetail(
   return {
     ...toListItem(w),
     description: w.description,
+    purchaseOrder: w.purchaseOrder,
     completedAt: w.completedAt?.toISOString() ?? null,
     dueDateLocal: w.dueDate ? formatIn(w.dueDate, timeZone, "yyyy-MM-dd'T'HH:mm") : "",
     customerPhone: w.customer.phone,
@@ -168,15 +205,29 @@ async function toDetail(
       author: x.createdById ? (names.get(x.createdById) ?? null) : null,
       createdAt: x.createdAt.toISOString(),
     })),
-    attachments: files.map((f) => ({
-      id: f.id,
-      fileName: f.fileName,
-      contentType: f.contentType,
-      sizeBytes: f.sizeBytes,
-      kind: f.kind,
-      createdAt: f.createdAt.toISOString(),
-      author: f.createdById ? (names.get(f.createdById) ?? null) : null,
-    })),
+    evidence: toEvidence(files, names, null),
+    issues: w.issues.map(
+      (i): IssueDto => ({
+        id: i.id,
+        title: i.title,
+        details: i.details,
+        status: i.status,
+        createdAt: i.createdAt.toISOString(),
+        author: i.createdById ? (names.get(i.createdById) ?? null) : null,
+        evidence: toEvidence(files, names, i.id),
+      }),
+    ),
+    attachments: files
+      .filter((f) => f.phase === null)
+      .map((f) => ({
+        id: f.id,
+        fileName: f.fileName,
+        contentType: f.contentType,
+        sizeBytes: f.sizeBytes,
+        kind: f.kind,
+        createdAt: f.createdAt.toISOString(),
+        author: f.createdById ? (names.get(f.createdById) ?? null) : null,
+      })),
     timeline: w.statusChanges.map((s) => ({
       id: s.id,
       fromStatus: s.fromStatus,
@@ -204,7 +255,18 @@ export const workOrdersService = {
       ...statusWhere,
       ...(q.priority ? { priority: q.priority } : {}),
       ...(q.customerId ? { customerId: q.customerId } : {}),
-      ...(has ? { OR: [{ number: has }, { title: has }, { customer: { name: has } }, { asset: { name: has } }] } : {}),
+      ...(has
+        ? {
+            OR: [
+              { number: has },
+              { title: has },
+              { zohoTicket: has },
+              { purchaseOrder: has },
+              { customer: { name: has } },
+              { asset: { name: has } },
+            ],
+          }
+        : {}),
     };
     const orderBy: Prisma.WorkOrderOrderByWithRelationInput[] =
       q.sortBy === "dueDate"
@@ -295,8 +357,19 @@ export const workOrdersService = {
       workOrdersRepository.countOpenChecklist(db, id),
       c.requireSignatureOnComplete ? workOrdersRepository.countSignatures(db, id) : Promise.resolve(0),
     ]);
+    // A custom role needs "edit" for ordinary moves; QA moves (close / send back) need the QA permission.
+    // Technicians are gated by the field app (they only ever touch their own jobs).
+    if (
+      actor.customRoleId &&
+      actor.role !== "TECHNICIAN" &&
+      !isQaMove(w.status, input.status) &&
+      !hasPermission(actor.permissions, "workOrders:edit")
+    ) {
+      throw new ForbiddenError("Your role does not have permission to do this.");
+    }
     const error = transitionError(w.status, input.status, {
       role: actor.role,
+      canQa: canQa(actor),
       reason: input.reason,
       openChecklistItems,
       requireSignature: c.requireSignatureOnComplete,
@@ -310,7 +383,13 @@ export const workOrdersService = {
         where: { id, status: w.status },
         data: {
           status: input.status,
-          completedAt: input.status === "COMPLETED" ? new Date() : w.status === "COMPLETED" ? null : undefined,
+          // Stamped when the technician finishes; kept when QA closes; cleared when sent back or reopened.
+          completedAt:
+            input.status === "COMPLETED"
+              ? new Date()
+              : input.status === "IN_PROGRESS" && (w.status === "COMPLETED" || w.status === "CLOSED")
+                ? null
+                : undefined,
         },
       });
       if (res.count === 0)
@@ -412,9 +491,45 @@ export const workOrdersService = {
   },
 
   // ------------------------------------------------------------ attachments
-  async addAttachment(db: AppDb, actor: CurrentUser, id: string, file: File, kind?: "SIGNATURE") {
+  /**
+   * Stores a file on the work order. With `phase` it is before/after proof (photo or video only):
+   * for the reported problem, or for one extra issue when `issueId` is given. Each slot (phase, and
+   * issue) holds at most 4 photos and 1 video.
+   */
+  async addAttachment(
+    db: AppDb,
+    actor: CurrentUser,
+    id: string,
+    file: File,
+    opts: { kind?: "SIGNATURE"; phase?: EvidencePhaseValue; issueId?: string } = {},
+  ) {
     const companyId = companyOf(actor);
     await openOrThrow(db, id);
+    const { kind, phase, issueId } = opts;
+    let evidenceKind: "PHOTO" | "VIDEO" | null = null;
+    if (issueId && !phase)
+      throw new BadRequestError("Choose Before or After for this file.", { phase: ["Choose one."] });
+    if (phase) {
+      evidenceKind = mediaKindOf(file.type);
+      if (!evidenceKind)
+        throw new BadRequestError("Before and after proof must be a photo or a video.", {
+          file: ["Use a photo or a video."],
+        });
+      if (
+        issueId &&
+        !(await db.workOrderIssue.findFirst({ where: { id: issueId, workOrderId: id }, select: { id: true } }))
+      )
+        throw new NotFoundError("Issue", issueId);
+      const rows = await db.attachment.groupBy({
+        by: ["kind"],
+        where: { entityType: "WORK_ORDER", entityId: id, phase, issueId: issueId ?? null },
+        _count: { _all: true },
+      });
+      const counts = { PHOTO: 0, VIDEO: 0 };
+      for (const r of rows) if (r.kind === "PHOTO" || r.kind === "VIDEO") counts[r.kind] = r._count._all;
+      const error = evidenceError(counts, evidenceKind, phase);
+      if (error) throw new ConflictError(error, { file: [error] });
+    }
     const stored = await saveFile(companyId, file);
     try {
       return await db.attachment.create({
@@ -426,7 +541,9 @@ export const workOrdersService = {
           storageKey: stored.key,
           contentType: stored.contentType,
           sizeBytes: stored.size,
-          kind: kind ?? (stored.contentType.startsWith("image/") ? "PHOTO" : "DOCUMENT"),
+          kind: kind ?? evidenceKind ?? mediaKindOf(stored.contentType) ?? "DOCUMENT",
+          phase: phase ?? null,
+          issueId: issueId ?? null,
         },
         select: { id: true, fileName: true },
       });
@@ -442,6 +559,48 @@ export const workOrdersService = {
     if (!a) throw new NotFoundError("Attachment", attachmentId);
     // Soft delete keeps the file for audit; a clean-up job (Phase 7) can purge old ones.
     await db.attachment.delete({ where: { id: attachmentId } });
+  },
+
+  // ------------------------------------------------------------ extra issues found on site
+  async addIssue(db: AppDb, actor: CurrentUser, id: string, input: IssueInput): Promise<IssueDto> {
+    const companyId = companyOf(actor);
+    await openOrThrow(db, id);
+    const i = await db.workOrderIssue.create({
+      data: {
+        companyId,
+        workOrderId: id,
+        title: input.title,
+        details: nullIfEmpty(input.details),
+        status: input.status,
+      },
+      select: { id: true, title: true, details: true, status: true, createdAt: true },
+    });
+    return {
+      ...i,
+      createdAt: i.createdAt.toISOString(),
+      author: actor.fullName,
+      evidence: { before: [], after: [] },
+    };
+  },
+
+  async updateIssue(db: AppDb, id: string, issueId: string, input: IssueInput) {
+    await openOrThrow(db, id);
+    const res = await db.workOrderIssue.updateMany({
+      where: { id: issueId, workOrderId: id },
+      data: { title: input.title, details: nullIfEmpty(input.details), status: input.status },
+    });
+    if (res.count === 0) throw new NotFoundError("Issue", issueId);
+  },
+
+  /** Removes the issue and its proof (soft delete, like every other record). */
+  async removeIssue(db: AppDb, id: string, issueId: string) {
+    await openOrThrow(db, id);
+    const found = await db.workOrderIssue.findFirst({ where: { id: issueId, workOrderId: id }, select: { id: true } });
+    if (!found) throw new NotFoundError("Issue", issueId);
+    await db.$withTx(async () => {
+      await db.attachment.deleteMany({ where: { entityType: "WORK_ORDER", entityId: id, issueId } });
+      await db.workOrderIssue.delete({ where: { id: issueId } });
+    });
   },
 
   /** The file of an attachment in this tenant (RLS + tenant scope make other companies' files invisible). */

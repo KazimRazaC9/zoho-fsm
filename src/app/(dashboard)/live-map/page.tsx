@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LiveMap } from "./live-map-client";
-import { dbFor, requireRole, requireUser } from "@/lib/auth";
+import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
 import { fieldService } from "@/modules/field";
 
 export const metadata: Metadata = { title: "Live map" };
@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: "Live map" };
 export default async function LiveMapPage() {
   const user = await requireUser();
   requireRole(user, ["ADMIN", "DISPATCHER"]);
+  requirePagePermission(user, "/live-map");
   const technicians = await fieldService.live(dbFor(user));
 
   return (

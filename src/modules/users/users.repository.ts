@@ -9,6 +9,8 @@ export const userSelect = {
   email: true,
   phone: true,
   role: true,
+  customRoleId: true,
+  customRole: { select: { name: true, permissions: true } },
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -59,7 +61,9 @@ export const usersRepository = {
   },
 
   countActiveAdmins(db: AppDb, excludingId: string) {
-    return db.user.count({ where: { role: "ADMIN", isActive: true, id: { not: excludingId } } });
+    return db.user.count({
+      where: { role: "ADMIN", customRoleId: null, isActive: true, id: { not: excludingId } },
+    });
   },
 
   upsertTechnicianProfile(

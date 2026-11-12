@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import { addDays, startOfWeek } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { seedDriveSense } from "./seed-drivesense";
+import { seedNestle } from "./seed-nestle";
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
 const D = (v: number) => new Prisma.Decimal(v);
@@ -25,6 +26,8 @@ async function main() {
     await seedDriveSense(prisma, passwordHash);
     await backfillTimelines();
     await seedDemoLocations();
+    await seedWorkflowRoles(passwordHash);
+    await seedNestle(prisma);
     return;
   }
 
@@ -235,6 +238,7 @@ async function main() {
     "IN_PROGRESS",
     "ON_HOLD",
     "COMPLETED",
+    "CLOSED",
     "CANCELLED",
   ];
   const titles = [
@@ -250,6 +254,7 @@ async function main() {
     DISPATCHED: "EN_ROUTE",
     IN_PROGRESS: "ON_SITE",
     COMPLETED: "COMPLETED",
+    CLOSED: "COMPLETED",
   };
   // Monday of the current week in the company's time zone.
   const mondayLocal = formatInTimeZone(startOfWeek(new Date(), { weekStartsOn: 1 }), tz, "yyyy-MM-dd");
@@ -271,7 +276,7 @@ async function main() {
         priority: priorities[(i - 1) % 3],
         status,
         dueDate: due,
-        completedAt: status === "COMPLETED" ? addDays(new Date(), -((i - 1) % 3)) : null,
+        completedAt: status === "COMPLETED" || status === "CLOSED" ? addDays(new Date(), -((i - 1) % 3)) : null,
         createdById: adminId,
         lines: {
           create: {
@@ -338,11 +343,14 @@ async function main() {
   await seedDriveSense(prisma, passwordHash);
   await backfillTimelines();
   await seedDemoLocations();
+  await seedWorkflowRoles(passwordHash);
+  await seedNestle(prisma);
 
   console.log("Seed complete:");
   console.log(
     "  superadmin@fieldserve.local, admin@demo.local, dispatcher@demo.local, tech1..3@demo.local, admin@acme.local",
   );
+  console.log("  DriveSense: haroon@ (CS + QA), khola@ (CS), ahsan.qa@ and asad.qa@ (QA) @drivesense.local");
   console.log("  password = SEED_PASSWORD from .env");
 }
 
@@ -367,6 +375,67 @@ async function seedDemoLocations() {
         longitude: s.lng,
         accuracy: 25,
         recordedAt: new Date(Date.now() - s.minutesAgo * 60_000),
+      },
+    });
+  }
+}
+
+/**
+ * DriveSense workflow roles: Customer sales opens tickets and work orders, QA verifies and closes
+ * them. All three sit on the Dispatcher staff type, so they can never exceed what a Dispatcher may do.
+ * Idempotent: roles and users that already exist are left alone.
+ */
+async function seedWorkflowRoles(passwordHash: string) {
+  const company = await prisma.company.findFirst({ where: { email: "ops@drivesense.local" }, select: { id: true } });
+  if (!company) return;
+  const csPermissions = [
+    "dashboard:view",
+    ...["requests", "customers", "assets", "workOrders", "estimates"].flatMap((r) => [
+      `${r}:view`,
+      `${r}:create`,
+      `${r}:edit`,
+    ]),
+    "dispatch:view",
+  ];
+  const roles = [
+    { name: "Customer sales", description: "Opens tickets and work orders.", permissions: csPermissions },
+    {
+      name: "Customer sales + QA",
+      description: "Customer sales who also verifies and closes work orders.",
+      permissions: [...csPermissions, "workOrders:close"],
+    },
+    {
+      name: "QA",
+      description: "Verifies completed work and closes the work order.",
+      permissions: ["dashboard:view", "requests:view", "customers:view", "assets:view", "workOrders:view", "workOrders:close"],
+    },
+  ];
+  const ids = new Map<string, string>();
+  for (const r of roles) {
+    const existing = await prisma.customRole.findFirst({ where: { companyId: company.id, name: r.name } });
+    const role =
+      existing ??
+      (await prisma.customRole.create({
+        data: { companyId: company.id, name: r.name, description: r.description, baseRole: "DISPATCHER", permissions: r.permissions },
+      }));
+    ids.set(r.name, role.id);
+  }
+  const people = [
+    { fullName: "Haroon", email: "haroon@drivesense.local", role: "Customer sales + QA" },
+    { fullName: "Khola", email: "khola@drivesense.local", role: "Customer sales" },
+    { fullName: "Ahsan QA", email: "ahsan.qa@drivesense.local", role: "QA" },
+    { fullName: "Asad QA", email: "asad.qa@drivesense.local", role: "QA" },
+  ];
+  for (const u of people) {
+    if (await prisma.user.findFirst({ where: { companyId: company.id, email: u.email } })) continue;
+    await prisma.user.create({
+      data: {
+        companyId: company.id,
+        fullName: u.fullName,
+        email: u.email,
+        passwordHash,
+        role: "DISPATCHER",
+        customRoleId: ids.get(u.role)!,
       },
     });
   }

@@ -1,6 +1,7 @@
 import type { AppointmentStatus, AttachmentKind, Priority, WorkOrderStatus } from "@prisma/client";
 import { z } from "zod";
 import { idParam, optionalText } from "@/lib/validation";
+import type { EvidenceDto, IssueDto } from "@/modules/work-orders";
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 
@@ -79,7 +80,14 @@ export type FieldJobDetail = {
   checklist: { id: string; text: string; isDone: boolean }[];
   parts: { id: string; description: string; qty: number }[];
   notes: { id: string; text: string; author: string | null; createdAt: string; mine: boolean }[];
+  /** Ordinary photos and the signature (not before/after proof). */
   photos: { id: string; fileName: string; kind: AttachmentKind }[];
+  /** Before/after proof of the reported problem. */
+  evidence: EvidenceDto;
+  /** Extra problems found on site, each with its own proof. */
+  issues: IssueDto[];
+  /** The signed-in technician (they may remove only their own files). */
+  meId: string;
   requireSignature: boolean;
   hasSignature: boolean;
   closed: boolean;

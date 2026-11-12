@@ -15,7 +15,7 @@ import type { CurrentUser } from "@/lib/auth";
 import type { AppDb } from "@/lib/db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { formatIn, todayIn } from "@/lib/tz";
-import { workOrdersService } from "@/modules/work-orders";
+import { workOrdersService, type IssueInput } from "@/modules/work-orders";
 
 const companyOf = (actor: CurrentUser) => {
   if (!actor.companyId) throw new ForbiddenError("This action needs a company account.");
@@ -82,10 +82,10 @@ async function closeTimeSheet(db: AppDb, appointmentId: string, loc?: LocationIn
 }
 
 export const fieldService = {
-  /** The signed-in technician's visits: open ones plus anything finished in the last 3 days. */
+  /** The signed-in technician's visits: open ones plus their history of the last 30 days. */
   async myJobs(db: AppDb, actor: CurrentUser): Promise<FieldJobList> {
     const tz = await zoneOf(db, companyOf(actor));
-    const since = new Date(Date.now() - 3 * 24 * 3600_000);
+    const since = new Date(Date.now() - 30 * 24 * 3600_000);
     const rows = await db.appointment.findMany({
       where: { technicianId: actor.id, status: { not: "CANCELLED" }, scheduledEnd: { gt: since } },
       orderBy: { scheduledStart: "asc" },
@@ -172,12 +172,15 @@ export const fieldService = {
           createdAt: n.createdAt,
           mine: n.authorId === actor.id,
         })),
+      evidence: wo.evidence,
+      issues: wo.issues,
+      meId: actor.id,
       photos: wo.attachments
         .filter((f) => f.kind === "PHOTO" || f.kind === "SIGNATURE")
         .map((f) => ({ id: f.id, fileName: f.fileName, kind: f.kind })),
       requireSignature: wo.requireSignatureOnComplete,
       hasSignature: wo.attachments.some((f) => f.kind === "SIGNATURE"),
-      closed: wo.status === "COMPLETED" || wo.status === "CANCELLED",
+      closed: wo.status === "COMPLETED" || wo.status === "CLOSED" || wo.status === "CANCELLED",
     };
   },
 
@@ -228,9 +231,45 @@ export const fieldService = {
     await workOrdersService.addNote(db, actor, workOrderId, { text, isInternal: false });
   },
 
-  async uploadFile(db: AppDb, actor: CurrentUser, workOrderId: string, file: File, signature: boolean) {
+  async uploadFile(
+    db: AppDb,
+    actor: CurrentUser,
+    workOrderId: string,
+    file: File,
+    opts: { signature?: boolean; phase?: "BEFORE" | "AFTER"; issueId?: string } = {},
+  ) {
     await assertMine(db, actor, workOrderId);
-    return workOrdersService.addAttachment(db, actor, workOrderId, file, signature ? "SIGNATURE" : undefined);
+    return workOrdersService.addAttachment(db, actor, workOrderId, file, {
+      kind: opts.signature ? "SIGNATURE" : undefined,
+      phase: opts.phase,
+      issueId: opts.issueId,
+    });
+  },
+
+  /** A technician may take back only their own before/after proof, and only while the job is open. */
+  async removeFile(db: AppDb, actor: CurrentUser, workOrderId: string, attachmentId: string) {
+    await assertMine(db, actor, workOrderId);
+    const f = await db.attachment.findFirst({
+      where: { id: attachmentId, entityType: "WORK_ORDER", entityId: workOrderId },
+      select: { createdById: true, phase: true },
+    });
+    if (!f || f.phase === null || f.createdById !== actor.id) throw new NotFoundError("File", attachmentId);
+    await workOrdersService.removeAttachment(db, workOrderId, attachmentId);
+  },
+
+  async addIssue(db: AppDb, actor: CurrentUser, workOrderId: string, input: IssueInput) {
+    await assertMine(db, actor, workOrderId);
+    return workOrdersService.addIssue(db, actor, workOrderId, input);
+  },
+
+  async updateIssue(db: AppDb, actor: CurrentUser, workOrderId: string, issueId: string, input: IssueInput) {
+    await assertMine(db, actor, workOrderId);
+    await workOrdersService.updateIssue(db, workOrderId, issueId, input);
+  },
+
+  async removeIssue(db: AppDb, actor: CurrentUser, workOrderId: string, issueId: string) {
+    await assertMine(db, actor, workOrderId);
+    await workOrdersService.removeIssue(db, workOrderId, issueId);
   },
 
   /** Parts the technician can pick: active catalog parts (no prices exposed). */

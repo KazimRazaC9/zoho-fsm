@@ -178,11 +178,11 @@ describe("Phase 6 — invoices and payments", () => {
       checklistTemplateId: "",
     });
     woIds.push(wo.id);
-    await expect(invoicesService.createFromWorkOrder(db, admin, wo.id)).rejects.toThrow(/must be completed/);
+    await expect(invoicesService.createFromWorkOrder(db, admin, wo.id)).rejects.toThrow(/must be closed/);
 
     await workOrdersService.addLine(db, admin, wo.id, line("Diagnostic", 1, 2000));
     await workOrdersService.addLine(db, admin, wo.id, line("Harness", 2, 1500.5));
-    await owner.workOrder.update({ where: { id: wo.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    await owner.workOrder.update({ where: { id: wo.id }, data: { status: "CLOSED", completedAt: new Date() } });
 
     const inv = await invoicesService.createFromWorkOrder(db, admin, wo.id);
     invoiceIds.push(inv.id);
@@ -295,7 +295,7 @@ describe("Phase 6 — invoices and payments", () => {
     });
     woIds.push(wo.id);
     await workOrdersService.addLine(db, admin, wo.id, line("Check", 1, 500));
-    await owner.workOrder.update({ where: { id: wo.id }, data: { status: "COMPLETED" } });
+    await owner.workOrder.update({ where: { id: wo.id }, data: { status: "CLOSED" } });
     const first = await invoicesService.createFromWorkOrder(db, admin, wo.id);
     invoiceIds.push(first.id);
     const v = await invoicesService.void(db, admin, first.id);

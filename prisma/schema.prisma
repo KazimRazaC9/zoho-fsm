@@ -70,6 +70,7 @@ enum WorkOrderStatus {
   IN_PROGRESS
   ON_HOLD
   COMPLETED
+  CLOSED
   CANCELLED
 }
 
@@ -83,8 +84,21 @@ enum AppointmentStatus {
 
 enum AttachmentKind {
   PHOTO
+  VIDEO
   SIGNATURE
   DOCUMENT
+}
+
+/// Proof taken before the work started or after it was done.
+enum EvidencePhase {
+  BEFORE
+  AFTER
+}
+
+enum IssueStatus {
+  FOUND
+  FIXED
+  FOLLOW_UP
 }
 
 enum InvoiceStatus {
@@ -133,6 +147,7 @@ model Company {
   deletedAt                  DateTime? @db.Timestamptz(3)
 
   users                   User[]
+  customRoles             CustomRole[]
   technicianProfiles      TechnicianProfile[]
   customers               Customer[]
   serviceAddresses        ServiceAddress[]
@@ -158,24 +173,44 @@ model Company {
   notifications           Notification[]
   numberSequences         NumberSequence[]
   workOrderStatusChanges  WorkOrderStatusChange[]
+  workOrderIssues         WorkOrderIssue[]
+  projects                Project[]
+}
+
+model CustomRole {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  baseRole    Role
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  users       User[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id           String      @id @default(cuid())
   companyId    String? // null only for SUPER_ADMIN
-  company      Company?  @relation(fields: [companyId], references: [id])
+  company      Company?    @relation(fields: [companyId], references: [id])
   fullName     String
   email        String
   phone        String?
   passwordHash String
   role         Role
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime? @db.Timestamptz(3)
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  customRoleId String?
+  customRole   CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: Restrict)
+  isActive     Boolean     @default(true)
+  lastLoginAt  DateTime?   @db.Timestamptz(3)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
   createdById  String?
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(3)
   updatedById  String?
-  deletedAt    DateTime? @db.Timestamptz(3)
+  deletedAt    DateTime?   @db.Timestamptz(3)
 
   technicianProfile   TechnicianProfile?
   refreshTokens       RefreshToken[]
@@ -246,6 +281,7 @@ model Customer {
   updatedById String?
   deletedAt   DateTime?    @db.Timestamptz(3)
 
+  projects         Project[]
   addresses        ServiceAddress[]
   assets           Asset[]
   serviceRequests  ServiceRequest[]
@@ -257,12 +293,35 @@ model Customer {
   @@index([companyId, name])
 }
 
+/// A customer can run several projects (for example "Water DC" and "Drift Vans"); each has its own sites.
+model Project {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  name        String
+  description String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  addresses ServiceAddress[]
+
+  @@index([companyId, customerId])
+}
+
 model ServiceAddress {
   id          String    @id @default(cuid())
   companyId   String
   company     Company   @relation(fields: [companyId], references: [id])
   customerId  String
   customer    Customer  @relation(fields: [customerId], references: [id])
+  /// The customer's project this site belongs to (optional).
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
   label       String?
   addressLine String
   city        String?
@@ -345,31 +404,32 @@ model ServiceItem {
 // ============================================================
 
 model ServiceRequest {
-  id          String               @id @default(cuid())
-  companyId   String
-  company     Company              @relation(fields: [companyId], references: [id])
-  number      String
-  customerId  String
-  customer    Customer             @relation(fields: [customerId], references: [id])
-  addressId   String?
-  address     ServiceAddress?      @relation(fields: [addressId], references: [id])
-  assetId     String?
-  asset       Asset?               @relation(fields: [assetId], references: [id])
-  title       String
-  description String?
-  priority    Priority             @default(MEDIUM)
-  source      String               @default("PHONE")
-  category    String?
+  id           String               @id @default(cuid())
+  companyId    String
+  company      Company              @relation(fields: [companyId], references: [id])
+  number       String
+  customerId   String
+  customer     Customer             @relation(fields: [customerId], references: [id])
+  addressId    String?
+  address      ServiceAddress?      @relation(fields: [addressId], references: [id])
+  assetId      String?
+  asset        Asset?               @relation(fields: [assetId], references: [id])
+  title        String
+  description  String?
+  priority     Priority             @default(MEDIUM)
+  source       String               @default("PHONE")
+  category     String?
+  zohoTicket   String?
   contactName  String?
   contactPhone String?
   contactEmail String?
   preferredAt  DateTime?            @db.Timestamptz(3)
-  status      ServiceRequestStatus @default(NEW)
-  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
-  createdById String?
-  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
-  updatedById String?
-  deletedAt   DateTime?            @db.Timestamptz(3)
+  status       ServiceRequestStatus @default(NEW)
+  createdAt    DateTime             @default(now()) @db.Timestamptz(3)
+  createdById  String?
+  updatedAt    DateTime             @updatedAt @db.Timestamptz(3)
+  updatedById  String?
+  deletedAt    DateTime?            @db.Timestamptz(3)
 
   estimates  Estimate[]
   workOrders WorkOrder[]
@@ -453,6 +513,8 @@ model WorkOrder {
   maintenancePlan   MaintenancePlan? @relation(fields: [maintenancePlanId], references: [id])
   title             String
   description       String?
+  zohoTicket        String?
+  purchaseOrder     String?
   priority          Priority         @default(MEDIUM)
   status            WorkOrderStatus  @default(NEW)
   dueDate           DateTime?        @db.Timestamptz(3)
@@ -470,6 +532,7 @@ model WorkOrder {
   invoices       Invoice[]
 
   statusChanges WorkOrderStatusChange[]
+  issues        WorkOrderIssue[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -636,6 +699,11 @@ model Attachment {
   contentType String?
   sizeBytes   Int?
   kind        AttachmentKind @default(DOCUMENT)
+  /// Set for before/after evidence; null for ordinary files.
+  phase       EvidencePhase?
+  /// Set when the proof belongs to an extra issue found on site.
+  issueId     String?
+  issue       WorkOrderIssue? @relation(fields: [issueId], references: [id])
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   createdById String?
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
@@ -643,6 +711,28 @@ model Attachment {
   deletedAt   DateTime?      @db.Timestamptz(3)
 
   @@index([companyId, entityType, entityId])
+  @@index([issueId])
+}
+
+/// A problem the technician found on site besides the one that was reported.
+model WorkOrderIssue {
+  id          String      @id @default(cuid())
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id])
+  workOrderId String
+  workOrder   WorkOrder   @relation(fields: [workOrderId], references: [id])
+  title       String
+  details     String?
+  status      IssueStatus @default(FOUND)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  createdById String?
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+  updatedById String?
+  deletedAt   DateTime?   @db.Timestamptz(3)
+
+  attachments Attachment[]
+
+  @@index([companyId, workOrderId])
 }
 
 model TechnicianLocation {
