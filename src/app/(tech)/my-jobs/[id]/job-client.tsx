@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  Camera,
   CheckCircle2,
   Clock,
   ListChecks,
@@ -14,14 +13,16 @@ import {
   PauseCircle,
   PenLine,
   PlayCircle,
-  Phone,
   Plus,
   Truck,
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EvidenceSection } from "@/components/domain/evidence-section";
+import { ServiceForm } from "@/components/domain/service-form";
+import { VoiceNotes } from "@/components/domain/voice-notes";
 import { Field, NativeSelect } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +37,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { missingSlotPhotos } from "@/modules/work-orders/evidence";
 import { mapsUrl } from "@/modules/customers/customers.schema";
 import {
   addJobIssueAction,
@@ -44,7 +47,9 @@ import {
   addJobPartAction,
   deleteJobFileAction,
   deleteJobIssueAction,
+  saveJobServiceFormAction,
   setJobChecklistAction,
+  setJobTempSensorAction,
   transitionJobAction,
   updateJobIssueAction,
 } from "@/modules/field/field.actions";
@@ -80,7 +85,9 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
   const router = useRouter();
   const [busy, setBusy] = useState<FieldAction | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
+  const [warnOpen, setWarnOpen] = useState(false);
   const refresh = () => router.refresh();
+  const missing = missingSlotPhotos(job.evidence, job.hasTempSensor);
 
   const run = async (action: FieldAction, reason?: string) => {
     setBusy(action);
@@ -100,6 +107,9 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
     setHoldOpen(false);
     refresh();
   };
+
+  // Completing with labeled photos missing is allowed, but the technician is asked first.
+  const go = (a: FieldAction) => (a === "complete" && missing.before + missing.after > 0 ? setWarnOpen(true) : run(a));
 
   const primary: FieldAction | undefined =
     job.actions.find((a) => a === "complete" || a === "start" || a === "resume") ?? job.actions[0];
@@ -153,10 +163,16 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
               </Button>
             )}
             {job.customer.phone && (
-              <Button asChild variant="outline">
-                <a href={`tel:${job.customer.phone}`}>
-                  <Phone /> Call
-                </a>
+              <Button
+                variant="outline"
+                aria-label={`Copy phone number ${job.customer.phone}`}
+                onClick={async () =>
+                  (await copyText(job.customer.phone!))
+                    ? toast.success(`${job.customer.phone} copied.`)
+                    : toast.error("Could not copy. Press and hold the number to copy it.")
+                }
+              >
+                <span className="tabular-nums">{job.customer.phone}</span>
               </Button>
             )}
           </div>
@@ -172,6 +188,8 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
         closed={job.closed}
         meId={job.meId}
         canDeleteAny={false}
+        hasTempSensor={job.hasTempSensor}
+        otherPhotos={job.photos.filter((p) => p.kind === "PHOTO")}
         capture
         api={{
           uploadUrl: `/api/v1/field/jobs/${job.id}/attachments`,
@@ -179,9 +197,18 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
           updateIssue: (issueId, input) => updateJobIssueAction(job.id, issueId, input),
           deleteIssue: (issueId) => deleteJobIssueAction(job.id, issueId),
           deleteFile: (attachmentId) => deleteJobFileAction(job.id, attachmentId),
+          setTempSensor: (on) => setJobTempSensorAction(job.id, on),
         }}
       />
-      <Photos job={job} onChange={refresh} />
+      <ServiceForm
+        form={job.serviceForm}
+        context={job.formContext}
+        audience="field"
+        readOnly={job.closed}
+        hasSignature={job.hasSignature}
+        save={(input) => saveJobServiceFormAction(job.id, input)}
+      />
+      <Signature job={job} onChange={refresh} />
       <Notes job={job} onChange={refresh} />
 
       {/* Sticky action bar above the bottom navigation */}
@@ -196,14 +223,14 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
                   variant="outline"
                   size="lg"
                   disabled={busy !== null}
-                  onClick={() => (a === "hold" ? setHoldOpen(true) : run(a))}
+                  onClick={() => (a === "hold" ? setHoldOpen(true) : go(a))}
                 >
                   <Icon /> {FIELD_ACTION_LABEL[a]}
                 </Button>
               );
             })}
             {primary && (
-              <Button size="lg" className="flex-1" disabled={busy !== null} onClick={() => run(primary)}>
+              <Button size="lg" className="flex-1" disabled={busy !== null} onClick={() => go(primary)}>
                 {busy === primary ? (
                   <Loader2 className="animate-spin" />
                 ) : (
@@ -219,6 +246,16 @@ export function JobView({ job, parts }: { job: FieldJobDetail; parts: PartOption
         </div>
       )}
 
+      <ConfirmDialog
+        open={warnOpen}
+        onOpenChange={setWarnOpen}
+        title="Some photos are still missing"
+        description={`Labeled photos not taken yet: ${missing.before} before, ${missing.after} after. Complete the job anyway?`}
+        confirmLabel="Complete anyway"
+        onConfirm={async () => {
+          await run("complete");
+        }}
+      />
       <HoldDialog open={holdOpen} onOpenChange={setHoldOpen} busy={busy === "hold"} onConfirm={(r) => run("hold", r)} />
     </div>
   );
@@ -410,95 +447,36 @@ async function upload(jobId: string, file: Blob, name: string, signature: boolea
   if (!res.ok) throw new Error(json.message ?? "Upload failed.");
 }
 
-function Photos({ job, onChange }: { job: FieldJobDetail; onChange: () => void }) {
-  const input = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(0);
+function Signature({ job, onChange }: { job: FieldJobDetail; onChange: () => void }) {
   const [signing, setSigning] = useState(false);
-
-  const addPhotos = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setUploading(files.length);
-    let ok = 0;
-    for (const f of Array.from(files)) {
-      try {
-        await upload(job.id, f, f.name, false);
-        ok++;
-      } catch (e) {
-        toast.error(`${f.name}: ${(e as Error).message}`);
-      }
-      setUploading((n) => n - 1);
-    }
-    if (input.current) input.current.value = "";
-    if (ok) {
-      toast.success(`${ok} photo${ok === 1 ? "" : "s"} uploaded.`);
-      onChange();
-    }
-  };
-
-  const photos = job.photos.filter((p) => p.kind === "PHOTO");
   const sig = job.photos.find((p) => p.kind === "SIGNATURE");
 
   return (
-    <Section icon={Camera} title="Photos & signature">
-      {photos.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {photos.map((p) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={p.id}
-              src={`/api/v1/attachments/${p.id}?inline=1`}
-              alt={p.fileName}
-              className="bg-muted aspect-square w-full rounded-md object-cover"
-              loading="lazy"
-            />
-          ))}
-        </div>
-      )}
-      {photos.length === 0 && <p className="text-muted-foreground text-sm">Any other photos of the job (optional).</p>}
-      {!job.closed && (
-        <>
-          <input
-            ref={input}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            className="hidden"
-            onChange={(e) => addPhotos(e.target.files)}
-          />
-          <Button variant="outline" className="w-full" onClick={() => input.current?.click()} disabled={uploading > 0}>
-            {uploading > 0 ? <Loader2 className="animate-spin" /> : <Camera />}
-            {uploading > 0 ? `Uploading ${uploading}…` : "Take or add photo"}
-          </Button>
-        </>
-      )}
-
-      <div className="border-t pt-3">
-        {sig ? (
-          <div className="space-y-2">
-            <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
-              <CheckCircle2 className="size-4" /> Customer signature captured
-            </p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/api/v1/attachments/${sig.id}?inline=1`}
-              alt="Customer signature"
-              className="h-24 rounded-md border bg-white"
-            />
-          </div>
-        ) : (
-          <p className="text-muted-foreground mb-2 text-sm">
-            {job.requireSignature
-              ? "A customer signature is required to complete this job."
-              : "Customer signature (optional)."}
+    <Section icon={PenLine} title="Customer signature">
+      {sig ? (
+        <div className="space-y-2">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+            <CheckCircle2 className="size-4" /> Customer signature captured
           </p>
-        )}
-        {!job.closed && (
-          <Button variant="outline" className="mt-2 w-full" onClick={() => setSigning(true)}>
-            <PenLine /> {sig ? "Capture again" : "Get customer signature"}
-          </Button>
-        )}
-      </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/v1/attachments/${sig.id}?inline=1`}
+            alt="Customer signature"
+            className="h-24 rounded-md border bg-white"
+          />
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          {job.requireSignature
+            ? "A customer signature is required to complete this job."
+            : "Customer signature (optional)."}
+        </p>
+      )}
+      {!job.closed && (
+        <Button variant="outline" className="w-full" onClick={() => setSigning(true)}>
+          <PenLine /> {sig ? "Capture again" : "Get customer signature"}
+        </Button>
+      )}
       <SignatureDialog
         open={signing}
         onOpenChange={setSigning}
@@ -650,6 +628,14 @@ function Notes({ job, onChange }: { job: FieldJobDetail; onChange: () => void })
           </li>
         ))}
       </ul>
+      <VoiceNotes
+        notes={job.voiceNotes}
+        uploadUrl={`/api/v1/field/jobs/${job.id}/attachments`}
+        deleteFile={(attachmentId) => deleteJobFileAction(job.id, attachmentId)}
+        closed={job.closed}
+        meId={job.meId}
+        canDeleteAny={false}
+      />
       {!job.closed && (
         <div className="space-y-2">
           <Textarea

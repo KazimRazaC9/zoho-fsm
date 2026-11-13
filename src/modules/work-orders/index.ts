@@ -3,3 +3,4 @@ export { workOrdersService } from "./work-orders.service";
 export * from "./work-orders.schema";
 export * from "./work-order-status";
 export * from "./evidence";
+export * from "./service-form";

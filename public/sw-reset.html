@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reset app cache · FieldServe</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#fff;color:#111827;text-align:center;padding:24px}
+main{max-width:26rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#6b7280;margin:0 0 1rem;font-size:.95rem}
+a{display:inline-block;background:#111827;color:#fff;border-radius:8px;padding:.7rem 1.2rem;text-decoration:none}
+@media (prefers-color-scheme:dark){body{background:#0a0a0a;color:#f5f5f5}a{background:#f5f5f5;color:#111}}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Clearing the app cache…</h1>
+  <p id="msg">Removes the saved copy of the app that this browser kept. Your data and your login are not touched.</p>
+  <a id="go" href="/login" hidden>Go to sign in</a>
+</main>
+<script>
+(async () => {
+  let workers = 0;
+  let stores = 0;
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations()) ?? [];
+    for (const r of regs) if (await r.unregister()) workers++;
+  } catch (e) {}
+  try {
+    for (const k of await caches.keys()) if (await caches.delete(k)) stores++;
+  } catch (e) {}
+  document.getElementById("title").textContent = "Done";
+  document.getElementById("msg").textContent =
+    "Removed " + workers + " background worker(s) and " + stores + " saved cache(s). Open the app again.";
+  document.getElementById("go").hidden = false;
+})();
+</script>
+</body>
+</html>

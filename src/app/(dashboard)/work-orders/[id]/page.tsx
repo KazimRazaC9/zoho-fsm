@@ -5,6 +5,7 @@ import { CalendarClock, ChevronLeft, ExternalLink, Inbox, MapPin, Phone, Wrench 
 import { AttachmentsSection, ChecklistSection, LinesSection, NotesSection, StatusActions } from "./work-order-client";
 import { EvidencePanel } from "./evidence-panel";
 import { InvoiceLink } from "./invoice-link";
+import { ServiceFormPanel } from "./service-form-panel";
 import { PriorityText, WorkOrderStatusBadge } from "@/components/domain/badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { dbFor, requirePagePermission, requireRole, requireUser } from "@/lib/auth";
@@ -167,6 +168,7 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
           <LinesSection {...ctx} items={items} />
           <ChecklistSection {...ctx} templates={templates} />
           <EvidencePanel wo={wo} userId={user.id} />
+          <ServiceFormPanel wo={wo} />
           <AttachmentsSection {...ctx} />
         </div>
         <div className="space-y-4">

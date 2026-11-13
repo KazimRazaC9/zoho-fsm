@@ -6,6 +6,7 @@ import {
   addIssueAction,
   deleteAttachmentAction,
   deleteIssueAction,
+  setTempSensorAction,
   updateIssueAction,
 } from "@/modules/work-orders/work-orders.actions";
 import type { WorkOrderDetail } from "@/modules/work-orders/work-orders.schema";
@@ -19,12 +20,15 @@ export function EvidencePanel({ wo, userId }: { wo: WorkOrderDetail; userId: str
       closed={isClosed(wo.status)}
       meId={userId}
       canDeleteAny
+      hasTempSensor={wo.hasTempSensor}
+      otherPhotos={wo.attachments.filter((a) => a.kind === "PHOTO")}
       api={{
         uploadUrl: `/api/v1/work-orders/${wo.id}/attachments`,
         addIssue: (input) => addIssueAction(wo.id, input),
         updateIssue: (issueId, input) => updateIssueAction(wo.id, issueId, input),
         deleteIssue: (issueId) => deleteIssueAction(wo.id, issueId),
         deleteFile: (attachmentId) => deleteAttachmentAction(wo.id, attachmentId),
+        setTempSensor: (on) => setTempSensorAction(wo.id, on),
       }}
     />
   );

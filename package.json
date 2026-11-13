@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "photos:compress": "tsx scripts/compress-existing-photos.ts",
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio"
   },
@@ -44,6 +45,7 @@
     "react-hook-form": "7.54.2",
     "react-leaflet": "5.0.0",
     "server-only": "0.0.1",
+    "sharp": "0.34.5",
     "sonner": "1.7.4",
     "tailwind-merge": "2.6.0",
     "zod": "3.25.76"

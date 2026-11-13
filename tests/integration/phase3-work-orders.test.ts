@@ -13,6 +13,7 @@ import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
 import { checklistsService } from "@/modules/checklists";
 import { requestsService } from "@/modules/requests";
 import { workOrdersService } from "@/modules/work-orders";
+import { TINY_PNG } from "../helpers/images";
 
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
 const stamp = Date.now().toString(36);
@@ -249,13 +250,15 @@ describe("Phase 3 — request to work order", () => {
 
   it("stores attachments, refuses unsafe types, and hides them from other companies", async () => {
     const id = woIds[0];
-    const png = new File([Buffer.from("89504e470d0a1a0a", "hex")], "../../evil name.png", { type: "image/png" });
+    const png = new File([TINY_PNG], "../../evil name.png", { type: "image/png" });
     const a = await workOrdersService.addAttachment(db, dispatcher, id, png);
-    expect(a.fileName).toBe("evil name.png");
+    expect(a.fileName).toBe("evil name.jpg"); // photos are saved as JPEG
     const { meta, data } = await workOrdersService.readAttachment(db, a.id);
     storageKeys.push(meta.storageKey);
+    if (meta.thumbKey) storageKeys.push(meta.thumbKey);
     expect(meta.kind).toBe("PHOTO");
-    expect(data.length).toBe(8);
+    expect(meta.contentType).toBe("image/jpeg");
+    expect([data[0], data[1]]).toEqual([0xff, 0xd8]); // a real JPEG
 
     const html = new File(["<script>alert(1)</script>"], "x.html", { type: "text/html" });
     await expect(workOrdersService.addAttachment(db, dispatcher, id, html)).rejects.toBeInstanceOf(BadRequestError);

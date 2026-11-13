@@ -1,6 +1,7 @@
 import type { AttachmentKind, Priority, WorkOrderStatus } from "@prisma/client";
 import { z } from "zod";
 import { idParam, moneySchema, optionalText, percentSchema, requiredText } from "@/lib/validation";
+import type { ServiceFormContext, ServiceFormDto } from "./service-form";
 import { ISSUE_STATUSES, type EvidenceKind, type IssueStatusValue } from "./evidence";
 import { WORK_ORDER_STATUSES } from "./work-order-status";
 
@@ -122,6 +123,8 @@ export type MediaDto = {
   fileName: string;
   kind: EvidenceKind;
   contentType: string | null;
+  /** Which labeled photo this is (e.g. FRONT_VIEW); null for videos and issue proof. */
+  slot: string | null;
   createdAt: string;
   author: string | null;
   /** The user who uploaded it (a technician may remove only their own). */
@@ -129,6 +132,17 @@ export type MediaDto = {
 };
 
 export type EvidenceDto = { before: MediaDto[]; after: MediaDto[] };
+
+/** A spoken note (audio recording) on a work order. */
+export type VoiceNoteDto = {
+  id: string;
+  createdAt: string;
+  author: string | null;
+  authorId: string | null;
+};
+
+/** Most voice notes one work order can hold. */
+export const MAX_VOICE_NOTES = 10;
 
 export type IssueDto = {
   id: string;
@@ -143,6 +157,10 @@ export type IssueDto = {
 export type WorkOrderDetail = WorkOrderListItem & {
   description: string | null;
   purchaseOrder: string | null;
+  /** The DriveSense job form of this work order; null until someone saves it. */
+  serviceForm: ServiceFormDto | null;
+  /** What the system already knows (shown at the top of the form). */
+  formContext: ServiceFormContext;
   completedAt: string | null;
   /** Due date as "YYYY-MM-DDTHH:mm" in the company's zone (for the edit form); "" when none. */
   dueDateLocal: string;
@@ -167,10 +185,14 @@ export type WorkOrderDetail = WorkOrderListItem & {
     authorId: string | null;
     createdAt: string;
   }[];
+  /** A temperature sensor is installed: two more labeled photos are expected. */
+  hasTempSensor: boolean;
   /** Proof for the reported problem (before / after). */
   evidence: EvidenceDto;
   /** Extra problems found on site, each with its own proof. */
   issues: IssueDto[];
+  /** Spoken notes, oldest first. */
+  voiceNotes: VoiceNoteDto[];
   /** Ordinary files: documents, photos and signatures that are not before/after proof. */
   attachments: {
     id: string;
@@ -180,6 +202,7 @@ export type WorkOrderDetail = WorkOrderListItem & {
     kind: AttachmentKind;
     createdAt: string;
     author: string | null;
+    authorId: string | null;
   }[];
   timeline: {
     id: string;

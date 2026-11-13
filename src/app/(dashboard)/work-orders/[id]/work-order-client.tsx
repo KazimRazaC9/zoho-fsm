@@ -9,8 +9,10 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { WorkOrderSheet } from "../work-order-sheet";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { serviceFormGaps } from "@/modules/work-orders/service-form";
 import { handleResult } from "@/components/forms/apply-server-errors";
 import { Field, NativeSelect } from "@/components/forms/field";
+import { VoiceNotes } from "@/components/domain/voice-notes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,7 +73,7 @@ export function StatusActions({
   const [target, setTarget] = useState<WorkOrderStatus | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
+  const [dialog, setDialog] = useState<"edit" | "delete" | "form" | null>(null);
   const moves = nextStatuses(wo.status, role, canQa);
   const primary: WorkOrderStatus[] = ["SCHEDULED", "DISPATCHED", "IN_PROGRESS", "COMPLETED", "CLOSED"];
 
@@ -85,8 +87,11 @@ export function StatusActions({
     return true;
   };
 
+  const formGaps = serviceFormGaps(wo.serviceForm);
   const click = (to: WorkOrderStatus) => {
-    if (REASON_REQUIRED(wo.status, to)) {
+    // Closing is when the office signs the work off: remind them of the form, but never block.
+    if (to === "CLOSED" && formGaps.length > 0) setDialog("form");
+    else if (REASON_REQUIRED(wo.status, to)) {
       setReason("");
       setTarget(to);
     } else void move(to);
@@ -147,6 +152,16 @@ export function StatusActions({
         onOpenChange={(o) => !o && setDialog(null)}
         customers={customers}
         workOrder={wo}
+      />
+      <ConfirmDialog
+        open={dialog === "form"}
+        onOpenChange={(o) => !o && setDialog(null)}
+        title="The service form is not finished"
+        description={`Still empty: ${formGaps.join(", ")}. Close the work order anyway?`}
+        confirmLabel="Close anyway"
+        onConfirm={async () => {
+          await move("CLOSED");
+        }}
       />
       <ConfirmDialog
         open={dialog === "delete"}
@@ -582,6 +597,14 @@ export function NotesSection({ wo, role, userId }: Ctx) {
             </Button>
           </div>
         </form>
+        <VoiceNotes
+          notes={wo.voiceNotes}
+          uploadUrl={`/api/v1/work-orders/${wo.id}/attachments`}
+          deleteFile={(attachmentId) => deleteAttachmentAction(wo.id, attachmentId)}
+          closed={isClosed(wo.status)}
+          meId={userId}
+          canDeleteAny
+        />
         {wo.notes.length === 0 && <p className="text-muted-foreground text-sm">No notes yet.</p>}
         <ul className="space-y-3">
           {wo.notes.map((n) => (
@@ -618,7 +641,7 @@ export function NotesSection({ wo, role, userId }: Ctx) {
 }
 
 // ================================================================ attachments
-const ACCEPT = ".jpg,.jpeg,.png,.webp,.heic,.pdf,.txt,.csv,.docx,.xlsx";
+const ACCEPT = ".pdf,.txt,.csv,.docx,.xlsx";
 const kb = (n: number | null) =>
   n == null ? "" : n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
 
@@ -627,7 +650,8 @@ export function AttachmentsSection({ wo }: Ctx) {
   const input = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
   const closed = isClosed(wo.status);
-  const photos = wo.attachments.filter((a) => a.kind === "PHOTO" || a.kind === "SIGNATURE");
+  // Ordinary photos live under "Other photos" in the proof card; this section holds documents and the signature.
+  const photos = wo.attachments.filter((a) => a.kind === "SIGNATURE");
   const docs = wo.attachments.filter((a) => a.kind === "DOCUMENT");
 
   const upload = async (files: FileList | null) => {
@@ -655,7 +679,7 @@ export function AttachmentsSection({ wo }: Ctx) {
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Paperclip className="size-4" /> Photos & files ({wo.attachments.length})
+            <Paperclip className="size-4" /> Documents & signature ({photos.length + docs.length})
           </CardTitle>
           <ClosedHint wo={wo} />
         </div>
@@ -677,9 +701,9 @@ export function AttachmentsSection({ wo }: Ctx) {
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {wo.attachments.length === 0 && (
+        {photos.length + docs.length === 0 && (
           <p className="text-muted-foreground text-sm">
-            Before/after photos, job sheets, delivery notes. Images, PDF and Office files.
+            Job sheets, delivery notes and signed forms. PDF and Office files. Photos go under Other photos above.
           </p>
         )}
         {photos.length > 0 && (

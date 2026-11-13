@@ -26,18 +26,25 @@ function parseRange(header: string | null, size: number): { start: number; end: 
  * supported because Safari and iOS will not play a video without them.
  */
 export const GET = route({ roles: ["ADMIN", "DISPATCHER", "TECHNICIAN"] }, async ({ db, user, params, req }) => {
-  const { meta, data } = await workOrdersService.readAttachment(db, params.id);
+  const { meta, data, isThumb } = await workOrdersService.readAttachment(
+    db,
+    params.id,
+    req.nextUrl.searchParams.get("thumb") === "1",
+  );
   // Technicians only see files of jobs assigned to them.
   if (user.role === "TECHNICIAN") await assertMine(db, user, meta.entityId);
-  const type = meta.contentType ?? "application/octet-stream";
+  const type = isThumb ? "image/jpeg" : (meta.contentType ?? "application/octet-stream");
   const inline = req.nextUrl.searchParams.get("inline") === "1" && INLINE_TYPES.has(type);
   const headers: Record<string, string> = {
     "Content-Type": inline ? type : "application/octet-stream",
     "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.fileName)}`,
     "Cache-Control": "private, max-age=300",
     "Accept-Ranges": "bytes",
-    "Content-Security-Policy":
-      "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+    // Audio/video cannot run script, and a sandboxed document has an opaque origin that makes the
+    // browser refuse its own media ('self' no longer matches), so they are served without `sandbox`.
+    "Content-Security-Policy": `default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'${
+      inline && /^(video|audio)\//.test(type) ? "" : "; sandbox"
+    }`,
   };
   const rangeHeader = req.headers.get("range");
   const range = parseRange(rangeHeader, data.length);

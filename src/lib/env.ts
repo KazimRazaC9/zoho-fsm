@@ -11,8 +11,10 @@ const schema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(14),
   UPLOAD_DIR: z.string().default("./uploads"),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(100).default(10),
+  /** Largest photo accepted as input: it is shrunk on the server, so the limit is generous. */
+  MAX_PHOTO_MB: z.coerce.number().int().min(1).max(100).default(25),
   /** Videos are much larger than photos and documents. */
-  MAX_VIDEO_MB: z.coerce.number().int().min(1).max(500).default(100),
+  MAX_VIDEO_MB: z.coerce.number().int().min(1).max(500).default(50),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 

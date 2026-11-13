@@ -18,7 +18,10 @@ describe("custom role permissions", () => {
 
   it("maps API methods and record actions to the correct permission", () => {
     expect(permissionForApi("/api/v1/customers", "POST")).toBe("customers:create");
-    expect(permissionForApi("/api/v1/work-orders/wo_1/status", "POST")).toEqual(["workOrders:edit", "workOrders:close"]);
+    expect(permissionForApi("/api/v1/work-orders/wo_1/status", "POST")).toEqual([
+      "workOrders:edit",
+      "workOrders:close",
+    ]);
     // The API asks for the same permission the screen does.
     expect(permissionForApi("/api/v1/work-orders/wo_1/schedule", "PUT")).toBe("dispatch:edit");
     expect(permissionForApi("/api/v1/work-orders/wo_1/schedule", "DELETE")).toBe("dispatch:edit");

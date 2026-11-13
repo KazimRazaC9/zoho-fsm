@@ -13,6 +13,7 @@ import {
   type TransitionInput,
 } from "./field.schema";
 import { issueSchema, type IssueInput } from "@/modules/work-orders/work-orders.schema";
+import { serviceFormSchema, type ServiceFormInput } from "@/modules/work-orders";
 import { runAction } from "@/lib/action";
 import type { ActionResult } from "@/lib/action-result";
 import { idParam } from "@/lib/validation";
@@ -129,6 +130,30 @@ export async function deleteJobFileAction(id: string, attachmentId: string) {
       { id, attachmentId },
       async ({ db, user, input }) => {
         await fieldService.removeFile(db, user, input.id, input.attachmentId);
+      },
+    ),
+  );
+}
+
+export async function setJobTempSensorAction(id: string, on: boolean) {
+  return done(
+    await runAction(
+      { roles: FIELD, permission: "field:edit", input: job.extend({ on: z.boolean() }) },
+      { id, on },
+      async ({ db, user, input }) => {
+        await fieldService.setTempSensor(db, user, input.id, input.on);
+      },
+    ),
+  );
+}
+
+export async function saveJobServiceFormAction(id: string, input: ServiceFormInput) {
+  return done(
+    await runAction(
+      { roles: FIELD, permission: "field:edit", input: job.extend({ data: serviceFormSchema }) },
+      { id, data: input },
+      async ({ db, user, input }) => {
+        await fieldService.saveServiceForm(db, user, input.id, input.data);
       },
     ),
   );

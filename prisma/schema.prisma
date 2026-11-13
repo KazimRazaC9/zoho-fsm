@@ -85,6 +85,7 @@ enum AppointmentStatus {
 enum AttachmentKind {
   PHOTO
   VIDEO
+  AUDIO
   SIGNATURE
   DOCUMENT
 }
@@ -174,6 +175,7 @@ model Company {
   numberSequences         NumberSequence[]
   workOrderStatusChanges  WorkOrderStatusChange[]
   workOrderIssues         WorkOrderIssue[]
+  workOrderServiceForms   WorkOrderServiceForm[]
   projects                Project[]
 }
 
@@ -515,6 +517,8 @@ model WorkOrder {
   description       String?
   zohoTicket        String?
   purchaseOrder     String?
+  /// A temperature sensor is installed on this vehicle: two extra labeled photos are expected.
+  hasTempSensor     Boolean          @default(false)
   priority          Priority         @default(MEDIUM)
   status            WorkOrderStatus  @default(NEW)
   dueDate           DateTime?        @db.Timestamptz(3)
@@ -533,6 +537,7 @@ model WorkOrder {
 
   statusChanges WorkOrderStatusChange[]
   issues        WorkOrderIssue[]
+  serviceForm   WorkOrderServiceForm?
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -696,11 +701,15 @@ model Attachment {
   entityId    String
   fileName    String
   storageKey  String
+  /// Small preview of a photo (made on upload); null for other files.
+  thumbKey    String?
   contentType String?
   sizeBytes   Int?
   kind        AttachmentKind @default(DOCUMENT)
   /// Set for before/after evidence; null for ordinary files.
   phase       EvidencePhase?
+  /// Which labeled photo this is (e.g. FRONT_VIEW); null for videos, issue proof and other files.
+  slot        String?
   /// Set when the proof belongs to an extra issue found on site.
   issueId     String?
   issue       WorkOrderIssue? @relation(fields: [issueId], references: [id])
@@ -712,6 +721,39 @@ model Attachment {
 
   @@index([companyId, entityType, entityId])
   @@index([issueId])
+}
+
+/// The DriveSense job form of one work order (one per work order). Its lists are in service-form.ts.
+model WorkOrderServiceForm {
+  id                 String    @id @default(cuid())
+  companyId          String
+  company            Company   @relation(fields: [companyId], references: [id])
+  workOrderId        String    @unique
+  workOrder          WorkOrder @relation(fields: [workOrderId], references: [id])
+  vehicleNumber      String?
+  simNumber          String?
+  driverName         String?
+  driverMobile       String?
+  visitTypes         String[]  @default([])
+  visitReasons       String[]  @default([])
+  visitReasonOther   String?
+  /// check point -> answer, e.g. {"DEVICE_POWER":"OK","BACK_CAMERA":"NA"}
+  checks             Json      @default("{}")
+  firmwareNumber     String?
+  workDone           String[]  @default([])
+  workDoneOther      String?
+  /// component -> { replaced, oldDetails, newDetails, remarks }
+  replaced           Json      @default("{}")
+  finalResult        String?
+  notResolvedReason  String?
+  finalRemarks       String?
+  clientPersonName   String?
+  clientPersonMobile String?
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  createdById        String?
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+  updatedById        String?
+  deletedAt          DateTime? @db.Timestamptz(3)
 }
 
 /// A problem the technician found on site besides the one that was reported.

@@ -15,7 +15,7 @@ import type { CurrentUser } from "@/lib/auth";
 import type { AppDb } from "@/lib/db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { formatIn, todayIn } from "@/lib/tz";
-import { workOrdersService, type IssueInput } from "@/modules/work-orders";
+import { workOrdersService, type IssueInput, type PhotoSlotKey, type ServiceFormInput } from "@/modules/work-orders";
 
 const companyOf = (actor: CurrentUser) => {
   if (!actor.companyId) throw new ForbiddenError("This action needs a company account.");
@@ -172,12 +172,16 @@ export const fieldService = {
           createdAt: n.createdAt,
           mine: n.authorId === actor.id,
         })),
+      hasTempSensor: wo.hasTempSensor,
       evidence: wo.evidence,
       issues: wo.issues,
+      voiceNotes: wo.voiceNotes,
+      serviceForm: wo.serviceForm,
+      formContext: wo.formContext,
       meId: actor.id,
       photos: wo.attachments
         .filter((f) => f.kind === "PHOTO" || f.kind === "SIGNATURE")
-        .map((f) => ({ id: f.id, fileName: f.fileName, kind: f.kind })),
+        .map((f) => ({ id: f.id, fileName: f.fileName, kind: f.kind, authorId: f.authorId })),
       requireSignature: wo.requireSignatureOnComplete,
       hasSignature: wo.attachments.some((f) => f.kind === "SIGNATURE"),
       closed: wo.status === "COMPLETED" || wo.status === "CLOSED" || wo.status === "CANCELLED",
@@ -236,25 +240,38 @@ export const fieldService = {
     actor: CurrentUser,
     workOrderId: string,
     file: File,
-    opts: { signature?: boolean; phase?: "BEFORE" | "AFTER"; issueId?: string } = {},
+    opts: { signature?: boolean; phase?: "BEFORE" | "AFTER"; issueId?: string; slot?: PhotoSlotKey } = {},
   ) {
     await assertMine(db, actor, workOrderId);
     return workOrdersService.addAttachment(db, actor, workOrderId, file, {
       kind: opts.signature ? "SIGNATURE" : undefined,
       phase: opts.phase,
       issueId: opts.issueId,
+      slot: opts.slot,
     });
   },
 
-  /** A technician may take back only their own before/after proof, and only while the job is open. */
+  /** A technician may take back only their own before/after proof and voice notes, and only while the job is open. */
   async removeFile(db: AppDb, actor: CurrentUser, workOrderId: string, attachmentId: string) {
     await assertMine(db, actor, workOrderId);
     const f = await db.attachment.findFirst({
       where: { id: attachmentId, entityType: "WORK_ORDER", entityId: workOrderId },
-      select: { createdById: true, phase: true },
+      select: { createdById: true, phase: true, kind: true },
     });
-    if (!f || f.phase === null || f.createdById !== actor.id) throw new NotFoundError("File", attachmentId);
+    // Only their own before/after proof, other photos and voice notes; never documents or the signature.
+    if (!f || (f.phase === null && f.kind !== "AUDIO" && f.kind !== "PHOTO") || f.createdById !== actor.id)
+      throw new NotFoundError("File", attachmentId);
     await workOrdersService.removeAttachment(db, workOrderId, attachmentId);
+  },
+
+  async saveServiceForm(db: AppDb, actor: CurrentUser, workOrderId: string, input: ServiceFormInput) {
+    await assertMine(db, actor, workOrderId);
+    await workOrdersService.saveServiceForm(db, actor, workOrderId, input);
+  },
+
+  async setTempSensor(db: AppDb, actor: CurrentUser, workOrderId: string, on: boolean) {
+    await assertMine(db, actor, workOrderId);
+    await workOrdersService.setTempSensor(db, workOrderId, on);
   },
 
   async addIssue(db: AppDb, actor: CurrentUser, workOrderId: string, input: IssueInput) {

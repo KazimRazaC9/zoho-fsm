@@ -1,7 +1,7 @@
 import type { AppointmentStatus, AttachmentKind, Priority, WorkOrderStatus } from "@prisma/client";
 import { z } from "zod";
 import { idParam, optionalText } from "@/lib/validation";
-import type { EvidenceDto, IssueDto } from "@/modules/work-orders";
+import type { EvidenceDto, IssueDto, ServiceFormContext, ServiceFormDto, VoiceNoteDto } from "@/modules/work-orders";
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 
@@ -81,11 +81,18 @@ export type FieldJobDetail = {
   parts: { id: string; description: string; qty: number }[];
   notes: { id: string; text: string; author: string | null; createdAt: string; mine: boolean }[];
   /** Ordinary photos and the signature (not before/after proof). */
-  photos: { id: string; fileName: string; kind: AttachmentKind }[];
+  photos: { id: string; fileName: string; kind: AttachmentKind; authorId: string | null }[];
+  /** A temperature sensor is installed: two more labeled photos are expected. */
+  hasTempSensor: boolean;
   /** Before/after proof of the reported problem. */
   evidence: EvidenceDto;
   /** Extra problems found on site, each with its own proof. */
   issues: IssueDto[];
+  /** The DriveSense job form (optional for the technician). */
+  serviceForm: ServiceFormDto | null;
+  formContext: ServiceFormContext;
+  /** Spoken notes on the job. */
+  voiceNotes: VoiceNoteDto[];
   /** The signed-in technician (they may remove only their own files). */
   meId: string;
   requireSignature: boolean;

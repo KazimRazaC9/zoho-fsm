@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { serviceFormSchema, type ServiceFormInput } from "./service-form";
 import { workOrdersService } from "./work-orders.service";
 import {
   changeStatusSchema,
@@ -212,6 +213,37 @@ export async function deleteIssueAction(id: string, issueId: string) {
       { id, issueId },
       async ({ db, input }) => {
         await workOrdersService.removeIssue(db, input.id, input.issueId);
+      },
+    ),
+  );
+}
+
+export async function setTempSensorAction(id: string, on: boolean) {
+  return done(
+    await runAction(
+      { roles: OPS, permission: "workOrders:edit", input: wo.extend({ on: z.boolean() }) },
+      { id, on },
+      async ({ db, input }) => {
+        await workOrdersService.setTempSensor(db, input.id, input.on);
+      },
+    ),
+  );
+}
+
+// ---------------------------------------------------------------- the DriveSense job form
+
+export async function saveServiceFormAction(id: string, input: ServiceFormInput) {
+  return done(
+    await runAction(
+      // QA may fill in what is missing before closing, so "close" is enough as well as "edit".
+      {
+        roles: OPS,
+        permission: ["workOrders:edit", "workOrders:close"],
+        input: wo.extend({ data: serviceFormSchema }),
+      },
+      { id, data: input },
+      async ({ db, user, input }) => {
+        await workOrdersService.saveServiceForm(db, user, input.id, input.data);
       },
     ),
   );

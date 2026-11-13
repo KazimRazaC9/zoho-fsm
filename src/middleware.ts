@@ -14,6 +14,6 @@ export default authMiddleware((request) => {
 export const config = {
   // API routes authenticate themselves (session cookie or bearer token).
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|sw.js|offline.html|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|webmanifest)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|sw.js|sw-reset.html|offline.html|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|webmanifest)$).*)",
   ],
 };

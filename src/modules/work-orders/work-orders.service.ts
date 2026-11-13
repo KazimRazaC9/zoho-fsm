@@ -1,6 +1,22 @@
 import "server-only";
 import { Prisma, type WorkOrderStatus } from "@prisma/client";
-import { evidenceError, mediaKindOf, type EvidencePhaseValue } from "./evidence";
+import {
+  evidenceError,
+  isSlotKey,
+  isTempSlot,
+  mediaKindOf,
+  OTHER_PHOTO_LIMIT,
+  TEMP_SLOT_KEYS,
+  type EvidencePhaseValue,
+  type PhotoSlotKey,
+} from "./evidence";
+import {
+  BLANK_SERVICE_FORM,
+  cleanReplaced,
+  serviceFormSchema,
+  type ServiceFormDto,
+  type ServiceFormInput,
+} from "./service-form";
 import { isClosed, isQaMove, STATUS_TEXT, transitionError } from "./work-order-status";
 import { workOrdersRepository, type DetailRow, type ListRow } from "./work-orders.repository";
 import type {
@@ -17,6 +33,7 @@ import type {
   WorkOrderListItem,
   WorkOrderListQuery,
 } from "./work-orders.schema";
+import { MAX_VOICE_NOTES } from "./work-orders.schema";
 import type { CurrentUser } from "@/lib/auth";
 import type { AppDb } from "@/lib/db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
@@ -25,7 +42,7 @@ import { computeLine, computeTotals } from "@/lib/money";
 import { nextNumber } from "@/lib/numbers";
 import { paged, type PagedResult } from "@/lib/pagination";
 import { OPEN_WORK_ORDER_STATUSES } from "@/lib/statuses";
-import { deleteStoredFile, readStoredFile, safeFileName, saveFile } from "@/lib/storage";
+import { baseType, deleteStoredFile, nameForType, readStoredFile, safeFileName, saveFile } from "@/lib/storage";
 import { formatIn, fromCompanyTime } from "@/lib/tz";
 import { nullIfEmpty } from "@/lib/validation";
 import { checklistsService } from "@/modules/checklists";
@@ -132,6 +149,7 @@ function toMedia(f: AttachmentRow, names: Map<string, string>): MediaDto {
     fileName: f.fileName,
     kind: f.kind === "VIDEO" ? "VIDEO" : "PHOTO",
     contentType: f.contentType,
+    slot: f.slot,
     createdAt: f.createdAt.toISOString(),
     author: f.createdById ? (names.get(f.createdById) ?? null) : null,
     authorId: f.createdById,
@@ -148,6 +166,36 @@ function toEvidence(files: AttachmentRow[], names: Map<string, string>, issueId:
   return { before: phase("BEFORE"), after: phase("AFTER") };
 }
 
+type ServiceFormRow = NonNullable<DetailRow["serviceForm"]>;
+
+/** The saved form for the screens; a row that no longer fits the lists (an old version) shows as blank. */
+function toServiceForm(f: ServiceFormRow, names: Map<string, string>): ServiceFormDto {
+  const parsed = serviceFormSchema.safeParse({
+    vehicleNumber: f.vehicleNumber ?? "",
+    simNumber: f.simNumber ?? "",
+    driverName: f.driverName ?? "",
+    driverMobile: f.driverMobile ?? "",
+    visitTypes: f.visitTypes,
+    visitReasons: f.visitReasons,
+    visitReasonOther: f.visitReasonOther ?? "",
+    checks: f.checks ?? {},
+    firmwareNumber: f.firmwareNumber ?? "",
+    workDone: f.workDone,
+    workDoneOther: f.workDoneOther ?? "",
+    replaced: f.replaced ?? {},
+    finalResult: f.finalResult ?? "",
+    notResolvedReason: f.notResolvedReason ?? "",
+    finalRemarks: f.finalRemarks ?? "",
+    clientPersonName: f.clientPersonName ?? "",
+    clientPersonMobile: f.clientPersonMobile ?? "",
+  });
+  return {
+    ...(parsed.success ? parsed.data : BLANK_SERVICE_FORM),
+    updatedAt: f.updatedAt.toISOString(),
+    updatedBy: f.updatedById ? (names.get(f.updatedById) ?? null) : null,
+  };
+}
+
 async function toDetail(
   db: AppDb,
   w: DetailRow,
@@ -157,6 +205,7 @@ async function toDetail(
   const files = await workOrdersRepository.attachments(db, w.id);
   const names = await workOrdersRepository.userNames(db, [
     ...w.issues.map((x) => x.createdById ?? ""),
+    w.serviceForm?.updatedById ?? "",
     ...w.notes.map((x) => x.createdById ?? ""),
     ...files.map((f) => f.createdById ?? ""),
   ]);
@@ -166,6 +215,18 @@ async function toDetail(
     ...toListItem(w),
     description: w.description,
     purchaseOrder: w.purchaseOrder,
+    serviceForm: w.serviceForm ? toServiceForm(w.serviceForm, names) : null,
+    formContext: {
+      date: formatIn(w.appointments[0]?.scheduledStart ?? w.createdAt, timeZone, "yyyy-MM-dd"),
+      projectName: w.address?.project?.name ?? null,
+      clientName: w.customer.name,
+      siteLabel: siteText(w.address),
+      technicianName: w.appointments[0]?.technician.fullName ?? null,
+      ticket: w.zohoTicket ?? w.request?.number ?? null,
+      deviceModel: [w.asset?.brand, w.asset?.model].filter(Boolean).join(" ") || null,
+      deviceSerial: w.asset?.serialNo ?? null,
+    },
+    hasTempSensor: w.hasTempSensor,
     completedAt: w.completedAt?.toISOString() ?? null,
     dueDateLocal: w.dueDate ? formatIn(w.dueDate, timeZone, "yyyy-MM-dd'T'HH:mm") : "",
     customerPhone: w.customer.phone,
@@ -217,8 +278,17 @@ async function toDetail(
         evidence: toEvidence(files, names, i.id),
       }),
     ),
+    voiceNotes: files
+      .filter((f) => f.kind === "AUDIO")
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((f) => ({
+        id: f.id,
+        createdAt: f.createdAt.toISOString(),
+        author: f.createdById ? (names.get(f.createdById) ?? null) : null,
+        authorId: f.createdById,
+      })),
     attachments: files
-      .filter((f) => f.phase === null)
+      .filter((f) => f.phase === null && f.kind !== "AUDIO")
       .map((f) => ({
         id: f.id,
         fileName: f.fileName,
@@ -227,6 +297,7 @@ async function toDetail(
         kind: f.kind,
         createdAt: f.createdAt.toISOString(),
         author: f.createdById ? (names.get(f.createdById) ?? null) : null,
+        authorId: f.createdById,
       })),
     timeline: w.statusChanges.map((s) => ({
       id: s.id,
@@ -501,16 +572,21 @@ export const workOrdersService = {
     actor: CurrentUser,
     id: string,
     file: File,
-    opts: { kind?: "SIGNATURE"; phase?: EvidencePhaseValue; issueId?: string } = {},
+    opts: { kind?: "SIGNATURE"; phase?: EvidencePhaseValue; issueId?: string; slot?: PhotoSlotKey } = {},
   ) {
     const companyId = companyOf(actor);
     await openOrThrow(db, id);
-    const { kind, phase, issueId } = opts;
+    const { kind, phase, issueId, slot } = opts;
     let evidenceKind: "PHOTO" | "VIDEO" | null = null;
     if (issueId && !phase)
       throw new BadRequestError("Choose Before or After for this file.", { phase: ["Choose one."] });
+    if (slot && !phase) throw new BadRequestError("Choose Before or After for this photo.", { phase: ["Choose one."] });
+    if (slot && issueId)
+      throw new BadRequestError("Labeled photos belong to the reported problem, not to an issue.", {
+        slot: ["Not available for an issue."],
+      });
     if (phase) {
-      evidenceKind = mediaKindOf(file.type);
+      evidenceKind = mediaKindOf(baseType(file.type));
       if (!evidenceKind)
         throw new BadRequestError("Before and after proof must be a photo or a video.", {
           file: ["Use a photo or a video."],
@@ -520,35 +596,83 @@ export const workOrdersService = {
         !(await db.workOrderIssue.findFirst({ where: { id: issueId, workOrderId: id }, select: { id: true } }))
       )
         throw new NotFoundError("Issue", issueId);
-      const rows = await db.attachment.groupBy({
-        by: ["kind"],
-        where: { entityType: "WORK_ORDER", entityId: id, phase, issueId: issueId ?? null },
-        _count: { _all: true },
-      });
-      const counts = { PHOTO: 0, VIDEO: 0 };
-      for (const r of rows) if (r.kind === "PHOTO" || r.kind === "VIDEO") counts[r.kind] = r._count._all;
-      const error = evidenceError(counts, evidenceKind, phase);
-      if (error) throw new ConflictError(error, { file: [error] });
+      if (slot && evidenceKind !== "PHOTO")
+        throw new BadRequestError("A labeled slot takes a photo, not a video.", { file: ["Use a photo."] });
+      if (!issueId && evidenceKind === "PHOTO") {
+        // The reported problem's photos are labeled: one per label, before and after.
+        if (!slot)
+          throw new BadRequestError("Choose which photo this is, for example Vehicle Front View.", {
+            slot: ["Choose a label."],
+          });
+        if (!isSlotKey(slot)) throw new BadRequestError("Unknown photo label.", { slot: ["Unknown label."] });
+        if (isTempSlot(slot)) {
+          const w = await db.workOrder.findFirst({ where: { id }, select: { hasTempSensor: true } });
+          if (!w?.hasTempSensor) {
+            const message = 'Turn on "Temperature sensor installed" first.';
+            throw new ConflictError(message, { slot: [message] });
+          }
+        }
+      } else {
+        // A video, or any proof for an issue: counted per section (4 photos, 1 video).
+        const rows = await db.attachment.groupBy({
+          by: ["kind"],
+          where: { entityType: "WORK_ORDER", entityId: id, phase, issueId: issueId ?? null, slot: null },
+          _count: { _all: true },
+        });
+        const counts = { PHOTO: 0, VIDEO: 0 };
+        for (const r of rows) if (r.kind === "PHOTO" || r.kind === "VIDEO") counts[r.kind] = r._count._all;
+        const error = evidenceError(counts, evidenceKind, phase);
+        if (error) throw new ConflictError(error, { file: [error] });
+      }
     }
-    const stored = await saveFile(companyId, file);
+    // "Other photos": any extra photo of the job, 20 in total.
+    if (!phase && !issueId && !kind && mediaKindOf(baseType(file.type)) === "PHOTO") {
+      const have = await db.attachment.count({
+        where: { entityType: "WORK_ORDER", entityId: id, kind: "PHOTO", phase: null, issueId: null, slot: null },
+      });
+      if (have >= OTHER_PHOTO_LIMIT) {
+        const message = `This work order already has ${OTHER_PHOTO_LIMIT} other photos. Remove one to add another.`;
+        throw new ConflictError(message, { file: [message] });
+      }
+    }
+    const isVoice = !phase && baseType(file.type).startsWith("audio/");
+    if (isVoice) {
+      const have = await db.attachment.count({ where: { entityType: "WORK_ORDER", entityId: id, kind: "AUDIO" } });
+      if (have >= MAX_VOICE_NOTES) {
+        const message = `This work order already has ${MAX_VOICE_NOTES} voice notes. Remove one to add another.`;
+        throw new ConflictError(message, { file: [message] });
+      }
+    }
+    // Photos are compressed and given a thumbnail; the customer's signature is kept exactly as drawn.
+    const stored = await saveFile(companyId, file, { compress: kind !== "SIGNATURE" });
     try {
-      return await db.attachment.create({
+      const created = await db.attachment.create({
         data: {
           companyId,
           entityType: "WORK_ORDER",
           entityId: id,
-          fileName: safeFileName(file.name),
+          fileName: nameForType(safeFileName(file.name), stored.contentType),
           storageKey: stored.key,
+          thumbKey: stored.thumbKey ?? null,
           contentType: stored.contentType,
           sizeBytes: stored.size,
-          kind: kind ?? evidenceKind ?? mediaKindOf(stored.contentType) ?? "DOCUMENT",
+          kind: kind ?? evidenceKind ?? (isVoice ? "AUDIO" : mediaKindOf(stored.contentType)) ?? "DOCUMENT",
           phase: phase ?? null,
+          slot: slot ?? null,
           issueId: issueId ?? null,
         },
         select: { id: true, fileName: true },
       });
+      // Taking a labeled photo again replaces the old one.
+      if (slot) {
+        await db.attachment.deleteMany({
+          where: { entityType: "WORK_ORDER", entityId: id, phase, slot, id: { not: created.id } },
+        });
+      }
+      return created;
     } catch (e) {
       await deleteStoredFile(stored.key);
+      if (stored.thumbKey) await deleteStoredFile(stored.thumbKey);
       throw e;
     }
   },
@@ -559,6 +683,53 @@ export const workOrdersService = {
     if (!a) throw new NotFoundError("Attachment", attachmentId);
     // Soft delete keeps the file for audit; a clean-up job (Phase 7) can purge old ones.
     await db.attachment.delete({ where: { id: attachmentId } });
+  },
+
+  /**
+   * Saves the DriveSense job form (one per work order). A technician can fill it while the job is open;
+   * office staff can keep filling it while the job waits for QA. Once it is closed or cancelled it is final.
+   */
+  async saveServiceForm(db: AppDb, actor: CurrentUser, id: string, input: ServiceFormInput) {
+    const companyId = companyOf(actor);
+    const w = await statusOrThrow(db, id);
+    const locked = actor.role === "TECHNICIAN" ? isClosed(w.status) : w.status === "CLOSED" || w.status === "CANCELLED";
+    if (locked) throw new ConflictError(`${w.number} is ${STATUS_TEXT[w.status]}: its form can no longer be changed.`);
+    const data = {
+      vehicleNumber: nullIfEmpty(input.vehicleNumber),
+      simNumber: nullIfEmpty(input.simNumber),
+      driverName: nullIfEmpty(input.driverName),
+      driverMobile: nullIfEmpty(input.driverMobile),
+      visitTypes: [...new Set(input.visitTypes)],
+      visitReasons: [...new Set(input.visitReasons)],
+      visitReasonOther: nullIfEmpty(input.visitReasonOther),
+      checks: input.checks as Prisma.InputJsonObject,
+      firmwareNumber: nullIfEmpty(input.firmwareNumber),
+      workDone: [...new Set(input.workDone)],
+      workDoneOther: nullIfEmpty(input.workDoneOther),
+      replaced: cleanReplaced(input.replaced) as Prisma.InputJsonObject,
+      finalResult: input.finalResult || null,
+      notResolvedReason: nullIfEmpty(input.notResolvedReason),
+      finalRemarks: nullIfEmpty(input.finalRemarks),
+      clientPersonName: nullIfEmpty(input.clientPersonName),
+      clientPersonMobile: nullIfEmpty(input.clientPersonMobile),
+    };
+    await db.workOrderServiceForm.upsert({
+      where: { workOrderId: id },
+      create: { companyId, workOrderId: id, ...data },
+      update: data,
+    });
+  },
+
+  /** The "Temperature sensor installed" switch: it adds the temp probe and temp sensor photo labels. */
+  async setTempSensor(db: AppDb, id: string, on: boolean) {
+    await openOrThrow(db, id);
+    if (!on) {
+      const n = await db.attachment.count({
+        where: { entityType: "WORK_ORDER", entityId: id, slot: { in: TEMP_SLOT_KEYS } },
+      });
+      if (n > 0) throw new ConflictError("Remove the temp probe and temp sensor photos first.");
+    }
+    await db.workOrder.update({ where: { id }, data: { hasTempSensor: on } });
   },
 
   // ------------------------------------------------------------ extra issues found on site
@@ -604,9 +775,11 @@ export const workOrdersService = {
   },
 
   /** The file of an attachment in this tenant (RLS + tenant scope make other companies' files invisible). */
-  async readAttachment(db: AppDb, attachmentId: string) {
+  async readAttachment(db: AppDb, attachmentId: string, wantThumb = false) {
     const a = await db.attachment.findFirst({ where: { id: attachmentId } });
     if (!a) throw new NotFoundError("Attachment", attachmentId);
-    return { meta: a, data: await readStoredFile(a.storageKey) };
+    // The small preview when asked for and available; otherwise the full file.
+    const isThumb = wantThumb && !!a.thumbKey;
+    return { meta: a, isThumb, data: await readStoredFile(isThumb ? a.thumbKey! : a.storageKey) };
   },
 };

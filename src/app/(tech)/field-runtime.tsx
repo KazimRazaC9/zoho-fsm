@@ -12,8 +12,16 @@ const EVERY_MS = 60_000;
 /** Registers the service worker (production only) so the field app is installable and opens offline. */
 export function PwaRegister() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV === "production") {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      return;
+    }
+    // In development a worker left over from an earlier production run would serve stale code: remove it.
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((all) => all.forEach((r) => void r.unregister()))
+      .catch(() => {});
   }, []);
   return null;
 }
